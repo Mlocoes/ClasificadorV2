@@ -1,0 +1,17 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+sqlalchemy==2.0.23
+pydantic[email]==2.4.2
+pydantic-settings==2.0.3
+pillow==10.1.0
+python-magic==0.4.27
+exifread==3.0.0
+opencv-python==4.8.1.78
+transformers==4.35.2
+torch==2.1.1
+numpy==1.26.2
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+alembic==1.12.1
+python-dotenv==1.0.0
