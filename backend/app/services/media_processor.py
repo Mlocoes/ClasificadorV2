@@ -1,10 +1,10 @@
 import os
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 from PIL import Image
+import cv2
 import exifread
 from datetime import datetime
-from transformers import CLIPProcessor, CLIPModel
 import torch
 from app.core.config import settings
 
@@ -13,38 +13,175 @@ class MediaProcessor:
         self.clip_model = None
         self.clip_processor = None
         
-    def _load_clip_model(self):
-        if self.clip_model is None:
-            self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-            self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    def _get_thumbnail_path(self, original_file_path: str) -> Tuple[Path, str]:
+        """
+        Genera la ruta de la miniatura en el directorio dedicado /thumbnails.
+        
+        Args:
+            original_file_path: Ruta al archivo original
+            
+        Returns:
+            Tuple[Path, str]: La ruta absoluta del sistema (Path) y el nombre del archivo de miniatura
+        """
+        original_path = Path(original_file_path)
+        file_stem = original_path.stem
+        thumbnail_name = f"thumb_{file_stem}.jpg"
+        
+        # Asegurar que el directorio dedicado existe
+        settings.THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
+        print(f"Usando directorio dedicado para miniaturas: {settings.THUMBNAILS_DIR}")
+        
+        # Siempre usar el directorio dedicado para miniaturas
+        return settings.THUMBNAILS_DIR / thumbnail_name, thumbnail_name
     
     def create_thumbnail(self, file_path: str, mime_type: str) -> Optional[str]:
-        if mime_type.startswith('image/'):
-            return self._create_image_thumbnail(file_path)
-        elif mime_type.startswith('video/'):
-            return self._create_video_thumbnail(file_path)
-        return None
+        try:
+            # Crear la miniatura según el tipo de archivo
+            if mime_type.startswith('image/'):
+                thumbnail_path = self._create_image_thumbnail(file_path)
+            elif mime_type.startswith('video/'):
+                thumbnail_path = self._create_video_thumbnail(file_path)
+            else:
+                return None
+            
+            # Los métodos _create_*_thumbnail ya devuelven la ruta web estandarizada
+            # con el formato "/thumbnails/thumb_nombre.jpg"
+            if thumbnail_path:
+                print(f"DEBUG - Miniatura creada correctamente, ruta web: {thumbnail_path}")
+                
+                # Establecer permisos correctos
+                try:
+                    # Asegurar que el directorio de miniaturas tiene permisos adecuados
+                    os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
+                    
+                    # Convertir la ruta web a una ruta física para chmod
+                    if thumbnail_path.startswith('/thumbnails/'):
+                        thumb_name = Path(thumbnail_path).name
+                        abs_path = settings.THUMBNAILS_DIR / thumb_name
+                        
+                        if abs_path.exists():
+                            os.chmod(str(abs_path), 0o777)
+                            print(f"Permisos establecidos correctamente para: {abs_path}")
+                except Exception as e:
+                    print(f"Warning: Error setting permissions: {e}")
+                
+            return thumbnail_path
+        except Exception as e:
+            print(f"Error en create_thumbnail: {e}")
+            return None
     
     def _create_image_thumbnail(self, file_path: str) -> Optional[str]:
         try:
+            # Obtener la ruta de la miniatura según la estrategia configurada
+            thumbnail_path, thumbnail_name = self._get_thumbnail_path(file_path)
+            print(f"Ruta ABSOLUTA de miniatura a crear: {thumbnail_path}")
+            
+            # Si la miniatura ya existe, devolverla
+            if thumbnail_path.exists():
+                print(f"La miniatura ya existe en: {thumbnail_path}")
+                # Devolver la ruta web para uso en la aplicación
+                return f"/thumbnails/{thumbnail_name}"
+            
             with Image.open(file_path) as img:
+                # Manejar orientación EXIF
+                try:
+                    if hasattr(img, '_getexif') and img._getexif() is not None:
+                        exif = dict(img._getexif().items())
+                        if orientation := exif.get(0x0112):  # Orientation tag
+                            if orientation == 2:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                            elif orientation == 3:
+                                img = img.transpose(Image.ROTATE_180)
+                            elif orientation == 4:
+                                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                            elif orientation == 5:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                            elif orientation == 6:
+                                img = img.transpose(Image.ROTATE_270)
+                            elif orientation == 7:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                            elif orientation == 8:
+                                img = img.transpose(Image.ROTATE_90)
+                except Exception as e:
+                    print(f"Warning: Error handling EXIF orientation: {e}")
+                
+                # Convertir a RGB si es necesario
+                if img.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[-1])
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Crear miniatura
                 img.thumbnail(settings.THUMBNAIL_SIZE)
-                thumbnail_path = str(Path(file_path).with_suffix('.thumb.jpg'))
-                img.save(thumbnail_path, 'JPEG')
-                return thumbnail_path
+                print(f"Guardando miniatura en: {thumbnail_path}")
+                img.save(str(thumbnail_path), 'JPEG', quality=85)
+                # Verificar si el archivo se creó correctamente
+                if os.path.exists(str(thumbnail_path)):
+                    os.chmod(str(thumbnail_path), 0o777)
+                    print(f"Miniatura creada correctamente en {thumbnail_path}")
+                else:
+                    print(f"ERROR: No se pudo crear la miniatura en {thumbnail_path}")
+            
+            # Devolver la ruta web para uso en la aplicación
+            return f"/thumbnails/{thumbnail_name}"
+            
         except Exception as e:
-            print(f"Error creating thumbnail: {e}")
+            print(f"Error creating image thumbnail: {e}")
             return None
     
     def _create_video_thumbnail(self, file_path: str) -> Optional[str]:
         try:
-            import cv2
-            cap = cv2.VideoCapture(file_path)
+            # Obtener la ruta de la miniatura según la estrategia configurada
+            thumbnail_path, thumbnail_name = self._get_thumbnail_path(file_path)
+            print(f"Ruta ABSOLUTA de miniatura de video a crear: {thumbnail_path}")
+            
+            # Si la miniatura ya existe, devolverla
+            if thumbnail_path.exists():
+                print(f"La miniatura de video ya existe en: {thumbnail_path}")
+                # Devolver la ruta web para uso en la aplicación
+                return f"/thumbnails/{thumbnail_name}"
+            
+            cap = cv2.VideoCapture(str(file_path))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            if total_frames > 0:
+                # Tomar frame al 25% del video
+                target_frame = min(int(total_frames * 0.25), total_frames - 1)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+            
             ret, frame = cap.read()
+            cap.release()
+            
             if ret:
-                thumbnail_path = str(Path(file_path).with_suffix('.thumb.jpg'))
-                cv2.imwrite(thumbnail_path, frame)
-                return thumbnail_path
+                # Redimensionar manteniendo proporción
+                height, width = frame.shape[:2]
+                max_size = max(settings.THUMBNAIL_SIZE)
+                
+                if width > height:
+                    new_width = max_size
+                    new_height = int(height * (max_size / width))
+                else:
+                    new_height = max_size
+                    new_width = int(width * (max_size / height))
+                
+                frame = cv2.resize(frame, (new_width, new_height))
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                img = Image.fromarray(frame)
+                print(f"Guardando miniatura de video en: {thumbnail_path}")
+                img.save(str(thumbnail_path), 'JPEG', quality=85)
+                # Verificar si el archivo se creó correctamente
+                if os.path.exists(str(thumbnail_path)):
+                    os.chmod(str(thumbnail_path), 0o777)
+                    print(f"Miniatura de video creada correctamente en {thumbnail_path}")
+                else:
+                    print(f"ERROR: No se pudo crear la miniatura de video en {thumbnail_path}")
+                
+                # Devolver la ruta web para uso en la aplicación
+                return f"/thumbnails/{thumbnail_name}"
             return None
         except Exception as e:
             print(f"Error creating video thumbnail: {e}")

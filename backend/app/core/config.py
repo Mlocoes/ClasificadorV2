@@ -7,12 +7,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "ClasificadorV2"
     
     # Directorios de almacenamiento
-    STORAGE_DIR: Path = Path("../storage")
+    STORAGE_DIR: Path = Path("/app/storage")
     UPLOADS_DIR: Path = STORAGE_DIR / "uploads"
     THUMBNAILS_DIR: Path = STORAGE_DIR / "thumbnails"
     
     # Base de datos
-    SQLITE_URL: str = f"sqlite:///{STORAGE_DIR}/db.sqlite3"
+    SQLITE_URL: str = "sqlite:////app/storage/db.sqlite3"
     
     # Configuración CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]
@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     
     # Configuración de miniaturas
     THUMBNAIL_SIZE: tuple = (200, 200)
+    # La única estrategia soportada es el directorio dedicado (/thumbnails)
+    THUMBNAIL_STORAGE_STRATEGY: str = "dedicated_dir"
     
     class Config:
         case_sensitive = True

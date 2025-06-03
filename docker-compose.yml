@@ -1,26 +1,37 @@
-version: '3.8'
 services:
   backend:
     build: ./backend
     volumes:
-      - ./storage:/app/storage
+      - ./storage:/app/storage:rw
+      - ./cache:/app/cache:rw
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    user: "1000:1000"
     environment:
+      - TRANSFORMERS_CACHE=/app/cache
       - DB_PATH=/app/storage/db.sqlite3
-    depends_on:
-      - db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
-      - backend
-  db:
-    image: "sqlite"
-    volumes:
-      - ./storage:/data
-    command: ["tail", "-f", "/dev/null"] # Mantener el contenedor vivo
+      backend:
+        condition: service_healthy
+
 volumes:
   storage:
     driver: local

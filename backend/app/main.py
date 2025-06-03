@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import os
 from pathlib import Path
 
 from app.core.config import settings
@@ -24,9 +25,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Crear directorios necesarios
-for path in [settings.STORAGE_DIR, settings.UPLOADS_DIR, settings.THUMBNAILS_DIR]:
-    path.mkdir(parents=True, exist_ok=True)
+# Crear y asegurar directorios de almacenamiento
+directories = [settings.STORAGE_DIR, settings.UPLOADS_DIR, settings.THUMBNAILS_DIR]
+for directory in directories:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(directory), 0o777)
+        print(f"Directorio {directory} creado y permisos establecidos")
+    except Exception as e:
+        print(f"Error al crear o establecer permisos en el directorio {directory}: {e}")
+        raise
+    except Exception as e:
+        print(f"Error al crear o establecer permisos en el directorio {directory}: {e}")
+        raise
 
 # Montar directorios estáticos
 app.mount("/uploads", StaticFiles(directory=str(settings.UPLOADS_DIR)), name="uploads")

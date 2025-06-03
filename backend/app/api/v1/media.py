@@ -4,6 +4,7 @@ from typing import List
 import os
 import shutil
 from pathlib import Path
+import re
 from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.media import Media, MediaCreate, MediaUpdate
@@ -12,6 +13,23 @@ from app.services.media_processor import MediaProcessor
 
 router = APIRouter()
 media_processor = MediaProcessor()
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Convierte un nombre de archivo a uno seguro para usar en el sistema de archivos.
+    - Elimina caracteres no permitidos
+    - Reemplaza espacios con guiones bajos
+    - Asegura que sea único
+    """
+    # Obtener nombre y extensión
+    name, ext = os.path.splitext(filename)
+    # Limpiar caracteres no permitidos
+    name = re.sub(r'[^a-zA-Z0-9._-]', '_', name)
+    # Evitar nombres vacíos
+    if not name:
+        name = 'file'
+    # Reconstruir nombre con extensión
+    return f"{name}{ext.lower()}"
 
 @router.post("/upload/", response_model=Media)
 async def upload_media(
@@ -22,12 +40,15 @@ async def upload_media(
     if not (file.content_type.startswith('image/') or file.content_type.startswith('video/')):
         raise HTTPException(status_code=400, detail="Tipo de archivo no soportado")
     
+    # Sanitizar nombre de archivo
+    safe_filename = sanitize_filename(file.filename)
+    
     # Crear directorio de uploads si no existe
     uploads_dir = settings.UPLOADS_DIR
     uploads_dir.mkdir(parents=True, exist_ok=True)
     
     # Guardar archivo
-    file_path = uploads_dir / file.filename
+    file_path = uploads_dir / safe_filename
     try:
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -36,17 +57,33 @@ async def upload_media(
     
     # Crear entrada en la base de datos
     media_create = MediaCreate(
-        filename=file.filename,
+        filename=safe_filename,
         mime_type=file.content_type,
         file_size=os.path.getsize(file_path)
     )
-    db_media = media_crud.create_media(db, media_create, str(file_path))
+    
+    # Guardar rutas relativas en la base de datos
+    file_relative_path = f"/uploads/{safe_filename}"
+    db_media = media_crud.create_media(db, media_create, file_relative_path)
     
     # Procesar archivo
     try:
         # Crear miniatura
         thumbnail_path = media_processor.create_thumbnail(str(file_path), file.content_type)
         if thumbnail_path:
+            print(f"ENDPOINT: Miniatura creada con éxito. Ruta recibida: {thumbnail_path}")
+            
+            # La ruta ya viene en formato web estandarizado: /thumbnails/thumb_nombre.jpg
+            # Verificar que sigue el formato correcto
+            if not str(thumbnail_path).startswith('/thumbnails/'):
+                print(f"ENDPOINT: ADVERTENCIA - La ruta no tiene el formato correcto: {thumbnail_path}")
+                # Normalizar la ruta en caso de error
+                thumb_name = Path(str(thumbnail_path)).name
+                thumbnail_path = f"/thumbnails/{thumb_name}"
+                print(f"ENDPOINT: CORRECCIÓN - Ruta normalizada: {thumbnail_path}")
+            
+            # Guardar la ruta web en la base de datos
+            print(f"ENDPOINT: Ruta final a guardar en BD: {thumbnail_path}")
             db_media.thumbnail_path = thumbnail_path
         
         # Extraer metadatos

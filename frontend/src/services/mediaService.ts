@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const API_URL = 'http://localhost:8000/api/v1';
 
@@ -27,31 +27,62 @@ export interface MediaUpdate {
     longitude?: number;
 }
 
+const handleError = (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<{ detail: string }>;
+        if (axiosError.response?.data?.detail) {
+            throw new Error(axiosError.response.data.detail);
+        }
+        throw new Error(axiosError.message);
+    }
+    throw error;
+};
+
 const mediaService = {
     async uploadFile(file: File): Promise<Media> {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const response = await axios.post(`${API_URL}/media/upload/`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-        });
-        return response.data;
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await axios.post(`${API_URL}/media/upload/`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            return response.data;
+        } catch (error) {
+            handleError(error);
+            throw error; // TypeScript necesita esto
+        }
     },
     
     async getAllMedia(): Promise<Media[]> {
-        const response = await axios.get(`${API_URL}/media/`);
-        return response.data;
+        try {
+            const response = await axios.get(`${API_URL}/media/`);
+            return response.data;
+        } catch (error) {
+            handleError(error);
+            throw error;
+        }
     },
     
     async updateMedia(id: number, data: MediaUpdate): Promise<Media> {
-        const response = await axios.patch(`${API_URL}/media/${id}`, data);
-        return response.data;
+        try {
+            const response = await axios.patch(`${API_URL}/media/${id}`, data);
+            return response.data;
+        } catch (error) {
+            handleError(error);
+            throw error;
+        }
     },
     
     async deleteMedia(id: number): Promise<void> {
-        await axios.delete(`${API_URL}/media/${id}`);
+        try {
+            await axios.delete(`${API_URL}/media/${id}`);
+        } catch (error) {
+            handleError(error);
+            throw error;
+        }
     },
 };
 

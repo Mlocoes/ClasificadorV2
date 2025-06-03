@@ -8,8 +8,7 @@ RUN npm install
 
 COPY . .
 
-RUN npm run build
-
 EXPOSE 3000
 
-CMD ["npm", "run", "preview"]
+# Cambiar a modo desarrollo en lugar de preview
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
