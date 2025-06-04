@@ -15,13 +15,13 @@ class MediaProcessor:
         
     def _get_thumbnail_path(self, original_file_path: str) -> Tuple[Path, str]:
         """
-        Genera la ruta de la miniatura en el directorio dedicado /thumbnails.
+        Genera la ruta de la miniatura en el directorio dedicado /app/storage/thumbnails.
         
         Args:
             original_file_path: Ruta al archivo original
             
         Returns:
-            Tuple[Path, str]: La ruta absoluta del sistema (Path) y el nombre del archivo de miniatura
+            Tuple[Path, str]: La ruta absoluta del sistema (Path) y la ruta web relativa
         """
         original_path = Path(original_file_path)
         file_stem = original_path.stem
@@ -32,8 +32,13 @@ class MediaProcessor:
         os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
         print(f"Usando directorio dedicado para miniaturas: {settings.THUMBNAILS_DIR}")
         
-        # Siempre usar el directorio dedicado para miniaturas
-        return settings.THUMBNAILS_DIR / thumbnail_name, thumbnail_name
+        # Ruta absoluta del archivo
+        absolute_path = settings.THUMBNAILS_DIR / thumbnail_name
+        
+        # Ruta web relativa (debe coincidir con tu estructura de directorios)
+        web_path = f"/storage/thumbnails/{thumbnail_name}"
+        
+        return absolute_path, web_path
     
     def create_thumbnail(self, file_path: str, mime_type: str) -> Optional[str]:
         try:
@@ -46,7 +51,7 @@ class MediaProcessor:
                 return None
             
             # Los métodos _create_*_thumbnail ya devuelven la ruta web estandarizada
-            # con el formato "/thumbnails/thumb_nombre.jpg"
+            # con el formato "/storage/thumbnails/thumb_nombre.jpg"
             if thumbnail_path:
                 print(f"DEBUG - Miniatura creada correctamente, ruta web: {thumbnail_path}")
                 
@@ -56,7 +61,7 @@ class MediaProcessor:
                     os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
                     
                     # Convertir la ruta web a una ruta física para chmod
-                    if thumbnail_path.startswith('/thumbnails/'):
+                    if thumbnail_path.startswith('/storage/thumbnails/'):
                         thumb_name = Path(thumbnail_path).name
                         abs_path = settings.THUMBNAILS_DIR / thumb_name
                         
@@ -74,14 +79,14 @@ class MediaProcessor:
     def _create_image_thumbnail(self, file_path: str) -> Optional[str]:
         try:
             # Obtener la ruta de la miniatura según la estrategia configurada
-            thumbnail_path, thumbnail_name = self._get_thumbnail_path(file_path)
-            print(f"Ruta ABSOLUTA de miniatura a crear: {thumbnail_path}")
+            thumbnail_absolute_path, thumbnail_web_path = self._get_thumbnail_path(file_path)
+            print(f"Ruta ABSOLUTA de miniatura a crear: {thumbnail_absolute_path}")
+            print(f"Ruta WEB de miniatura: {thumbnail_web_path}")
             
             # Si la miniatura ya existe, devolverla
-            if thumbnail_path.exists():
-                print(f"La miniatura ya existe en: {thumbnail_path}")
-                # Devolver la ruta web para uso en la aplicación
-                return f"/thumbnails/{thumbnail_name}"
+            if thumbnail_absolute_path.exists():
+                print(f"La miniatura ya existe en: {thumbnail_absolute_path}")
+                return thumbnail_web_path
             
             with Image.open(file_path) as img:
                 # Manejar orientación EXIF
@@ -116,17 +121,18 @@ class MediaProcessor:
                 
                 # Crear miniatura
                 img.thumbnail(settings.THUMBNAIL_SIZE)
-                print(f"Guardando miniatura en: {thumbnail_path}")
-                img.save(str(thumbnail_path), 'JPEG', quality=85)
+                print(f"Guardando miniatura en: {thumbnail_absolute_path}")
+                img.save(str(thumbnail_absolute_path), 'JPEG', quality=85)
+                
                 # Verificar si el archivo se creó correctamente
-                if os.path.exists(str(thumbnail_path)):
-                    os.chmod(str(thumbnail_path), 0o777)
-                    print(f"Miniatura creada correctamente en {thumbnail_path}")
+                if os.path.exists(str(thumbnail_absolute_path)):
+                    os.chmod(str(thumbnail_absolute_path), 0o777)
+                    print(f"Miniatura creada correctamente en {thumbnail_absolute_path}")
                 else:
-                    print(f"ERROR: No se pudo crear la miniatura en {thumbnail_path}")
+                    print(f"ERROR: No se pudo crear la miniatura en {thumbnail_absolute_path}")
             
             # Devolver la ruta web para uso en la aplicación
-            return f"/thumbnails/{thumbnail_name}"
+            return thumbnail_web_path
             
         except Exception as e:
             print(f"Error creating image thumbnail: {e}")
@@ -135,14 +141,14 @@ class MediaProcessor:
     def _create_video_thumbnail(self, file_path: str) -> Optional[str]:
         try:
             # Obtener la ruta de la miniatura según la estrategia configurada
-            thumbnail_path, thumbnail_name = self._get_thumbnail_path(file_path)
-            print(f"Ruta ABSOLUTA de miniatura de video a crear: {thumbnail_path}")
+            thumbnail_absolute_path, thumbnail_web_path = self._get_thumbnail_path(file_path)
+            print(f"Ruta ABSOLUTA de miniatura de video a crear: {thumbnail_absolute_path}")
+            print(f"Ruta WEB de miniatura de video: {thumbnail_web_path}")
             
             # Si la miniatura ya existe, devolverla
-            if thumbnail_path.exists():
-                print(f"La miniatura de video ya existe en: {thumbnail_path}")
-                # Devolver la ruta web para uso en la aplicación
-                return f"/thumbnails/{thumbnail_name}"
+            if thumbnail_absolute_path.exists():
+                print(f"La miniatura de video ya existe en: {thumbnail_absolute_path}")
+                return thumbnail_web_path
             
             cap = cv2.VideoCapture(str(file_path))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -171,21 +177,28 @@ class MediaProcessor:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
                 img = Image.fromarray(frame)
-                print(f"Guardando miniatura de video en: {thumbnail_path}")
-                img.save(str(thumbnail_path), 'JPEG', quality=85)
+                print(f"Guardando miniatura de video en: {thumbnail_absolute_path}")
+                img.save(str(thumbnail_absolute_path), 'JPEG', quality=85)
+                
                 # Verificar si el archivo se creó correctamente
-                if os.path.exists(str(thumbnail_path)):
-                    os.chmod(str(thumbnail_path), 0o777)
-                    print(f"Miniatura de video creada correctamente en {thumbnail_path}")
+                if os.path.exists(str(thumbnail_absolute_path)):
+                    os.chmod(str(thumbnail_absolute_path), 0o777)
+                    print(f"Miniatura de video creada correctamente en {thumbnail_absolute_path}")
                 else:
-                    print(f"ERROR: No se pudo crear la miniatura de video en {thumbnail_path}")
+                    print(f"ERROR: No se pudo crear la miniatura de video en {thumbnail_absolute_path}")
                 
                 # Devolver la ruta web para uso en la aplicación
-                return f"/thumbnails/{thumbnail_name}"
+                return thumbnail_web_path
             return None
         except Exception as e:
             print(f"Error creating video thumbnail: {e}")
             return None
+    
+    def _load_clip_model(self):
+        if self.clip_model is None:
+            from transformers import CLIPProcessor, CLIPModel
+            self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
     def extract_metadata(self, file_path: str, mime_type: str) -> dict:
         metadata = {}
@@ -236,7 +249,6 @@ class MediaProcessor:
     def _extract_video_metadata(self, file_path: str) -> dict:
         metadata = {}
         try:
-            import cv2
             cap = cv2.VideoCapture(file_path)
             
             # Dimensiones
@@ -297,3 +309,4 @@ class MediaProcessor:
         except Exception as e:
             print(f"Error predicting event: {e}")
             return "unknown", 0.0
+        
