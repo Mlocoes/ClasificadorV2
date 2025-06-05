@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any, cast
 from PIL import Image
 import cv2
 import exifread
@@ -8,38 +8,24 @@ from datetime import datetime
 import torch
 from app.core.config import settings
 
+# Importación condicional de pyheif
+HEIC_SUPPORT = False
+pyheif: Any = None  # Usar Any para evitar advertencias
+
+try:
+    import pyheif as pyheif_module
+    pyheif = pyheif_module
+    if hasattr(pyheif, 'read'):
+        HEIC_SUPPORT = True
+        print("pyheif está instalado y funcionando. El soporte para archivos HEIC/HEIF está disponible.")
+except ImportError as e:
+    print(f"pyheif no está disponible: {str(e)}. El soporte para archivos HEIC/HEIF no estará disponible.")
+
 class MediaProcessor:
     def __init__(self):
         self.clip_model = None
         self.clip_processor = None
-        
-    def _get_thumbnail_path(self, original_file_path: str) -> Tuple[Path, str]:
-        """
-        Genera la ruta de la miniatura en el directorio dedicado /app/storage/thumbnails.
-        
-        Args:
-            original_file_path: Ruta al archivo original
-            
-        Returns:
-            Tuple[Path, str]: La ruta absoluta del sistema (Path) y la ruta web relativa
-        """
-        original_path = Path(original_file_path)
-        file_stem = original_path.stem
-        thumbnail_name = f"thumb_{file_stem}.jpg"
-        
-        # Asegurar que el directorio dedicado existe
-        settings.THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
-        os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
-        print(f"Usando directorio dedicado para miniaturas: {settings.THUMBNAILS_DIR}")
-        
-        # Ruta absoluta del archivo
-        absolute_path = settings.THUMBNAILS_DIR / thumbnail_name
-        
-        # Ruta web relativa (debe coincidir con tu estructura de directorios)
-        web_path = f"/storage/thumbnails/{thumbnail_name}"
-        
-        return absolute_path, web_path
-    
+
     def create_thumbnail(self, file_path: str, mime_type: str) -> Optional[str]:
         try:
             # Crear la miniatura según el tipo de archivo
@@ -49,101 +35,97 @@ class MediaProcessor:
                 thumbnail_path = self._create_video_thumbnail(file_path)
             else:
                 return None
-            
-            # Los métodos _create_*_thumbnail ya devuelven la ruta web estandarizada
-            # con el formato "/storage/thumbnails/thumb_nombre.jpg"
-            if thumbnail_path:
-                print(f"DEBUG - Miniatura creada correctamente, ruta web: {thumbnail_path}")
-                
-                # Establecer permisos correctos
-                try:
-                    # Asegurar que el directorio de miniaturas tiene permisos adecuados
-                    os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
-                    
-                    # Convertir la ruta web a una ruta física para chmod
-                    if thumbnail_path.startswith('/storage/thumbnails/'):
-                        thumb_name = Path(thumbnail_path).name
-                        abs_path = settings.THUMBNAILS_DIR / thumb_name
-                        
-                        if abs_path.exists():
-                            os.chmod(str(abs_path), 0o777)
-                            print(f"Permisos establecidos correctamente para: {abs_path}")
-                except Exception as e:
-                    print(f"Warning: Error setting permissions: {e}")
-                
             return thumbnail_path
         except Exception as e:
             print(f"Error en create_thumbnail: {e}")
             return None
-    
+
     def _create_image_thumbnail(self, file_path: str) -> Optional[str]:
         try:
             # Obtener la ruta de la miniatura según la estrategia configurada
             thumbnail_absolute_path, thumbnail_web_path = self._get_thumbnail_path(file_path)
-            print(f"Ruta ABSOLUTA de miniatura a crear: {thumbnail_absolute_path}")
-            print(f"Ruta WEB de miniatura: {thumbnail_web_path}")
             
             # Si la miniatura ya existe, devolverla
             if thumbnail_absolute_path.exists():
                 print(f"La miniatura ya existe en: {thumbnail_absolute_path}")
                 return thumbnail_web_path
             
-            with Image.open(file_path) as img:
-                # Manejar orientación EXIF
+            # Procesar la imagen según su formato
+            if file_path.lower().endswith(('.heic', '.heif')):
+                if not HEIC_SUPPORT:
+                    print(f"No se puede procesar archivo HEIC/HEIF {file_path}: pyheif no está instalado")
+                    return None
+                
                 try:
-                    if hasattr(img, '_getexif') and img._getexif() is not None:
-                        exif = dict(img._getexif().items())
-                        if orientation := exif.get(0x0112):  # Orientation tag
-                            if orientation == 2:
-                                img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                            elif orientation == 3:
-                                img = img.transpose(Image.ROTATE_180)
-                            elif orientation == 4:
-                                img = img.transpose(Image.FLIP_TOP_BOTTOM)
-                            elif orientation == 5:
-                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
-                            elif orientation == 6:
-                                img = img.transpose(Image.ROTATE_270)
-                            elif orientation == 7:
-                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
-                            elif orientation == 8:
-                                img = img.transpose(Image.ROTATE_90)
+                    print(f"Procesando archivo HEIC/HEIF: {file_path}")
+                    heif_file = pyheif.read(file_path)
+                    img = Image.frombytes(
+                        heif_file.mode, 
+                        heif_file.size, 
+                        heif_file.data,
+                        "raw", 
+                        heif_file.mode, 
+                        heif_file.stride,
+                    )
                 except Exception as e:
-                    print(f"Warning: Error handling EXIF orientation: {e}")
-                
-                # Convertir a RGB si es necesario
-                if img.mode in ('RGBA', 'LA'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    background.paste(img, mask=img.split()[-1])
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Crear miniatura
-                img.thumbnail(settings.THUMBNAIL_SIZE)
-                print(f"Guardando miniatura en: {thumbnail_absolute_path}")
-                img.save(str(thumbnail_absolute_path), 'JPEG', quality=85)
-                
-                # Verificar si el archivo se creó correctamente
-                if os.path.exists(str(thumbnail_absolute_path)):
-                    os.chmod(str(thumbnail_absolute_path), 0o777)
-                    print(f"Miniatura creada correctamente en {thumbnail_absolute_path}")
-                else:
-                    print(f"ERROR: No se pudo crear la miniatura en {thumbnail_absolute_path}")
+                    print(f"Error al procesar archivo HEIC/HEIF {file_path}: {e}")
+                    return None
+            else:
+                # Para otros formatos de imagen
+                img = Image.open(file_path)
             
-            # Devolver la ruta web para uso en la aplicación
-            return thumbnail_web_path
+            # Manejar orientación EXIF
+            try:
+                if hasattr(img, '_getexif') and img._getexif() is not None:
+                    exif = dict(img._getexif().items())
+                    if orientation := exif.get(0x0112):  # Orientation tag
+                        if orientation == 2:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                        elif orientation == 3:
+                            img = img.transpose(Image.ROTATE_180)
+                        elif orientation == 4:
+                            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                        elif orientation == 5:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                        elif orientation == 6:
+                            img = img.transpose(Image.ROTATE_270)
+                        elif orientation == 7:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                        elif orientation == 8:
+                            img = img.transpose(Image.ROTATE_90)
+            except Exception as e:
+                print(f"Warning: Error handling EXIF orientation: {e}")
+            
+            # Convertir a RGB si es necesario
+            if img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Crear miniatura
+            img.thumbnail(settings.THUMBNAIL_SIZE)
+            print(f"Guardando miniatura en: {thumbnail_absolute_path}")
+            img.save(str(thumbnail_absolute_path), 'JPEG', quality=85)
+            
+            # Verificar si el archivo se creó correctamente
+            if os.path.exists(str(thumbnail_absolute_path)):
+                os.chmod(str(thumbnail_absolute_path), 0o777)
+                print(f"Miniatura creada correctamente en {thumbnail_absolute_path}")
+                return thumbnail_web_path
+            else:
+                print(f"ERROR: No se pudo crear la miniatura en {thumbnail_absolute_path}")
+                return None
             
         except Exception as e:
             print(f"Error creating image thumbnail: {e}")
             return None
-    
+
     def _create_video_thumbnail(self, file_path: str) -> Optional[str]:
         try:
             # Obtener la ruta de la miniatura según la estrategia configurada
             thumbnail_absolute_path, thumbnail_web_path = self._get_thumbnail_path(file_path)
-            print(f"Ruta ABSOLUTA de miniatura de video a crear: {thumbnail_absolute_path}")
-            print(f"Ruta WEB de miniatura de video: {thumbnail_web_path}")
             
             # Si la miniatura ya existe, devolverla
             if thumbnail_absolute_path.exists():
@@ -184,16 +166,41 @@ class MediaProcessor:
                 if os.path.exists(str(thumbnail_absolute_path)):
                     os.chmod(str(thumbnail_absolute_path), 0o777)
                     print(f"Miniatura de video creada correctamente en {thumbnail_absolute_path}")
+                    return thumbnail_web_path
                 else:
                     print(f"ERROR: No se pudo crear la miniatura de video en {thumbnail_absolute_path}")
-                
-                # Devolver la ruta web para uso en la aplicación
-                return thumbnail_web_path
+                    return None
             return None
         except Exception as e:
             print(f"Error creating video thumbnail: {e}")
             return None
-    
+
+    def _get_thumbnail_path(self, original_file_path: str) -> Tuple[Path, str]:
+        """
+        Genera la ruta de la miniatura en el directorio dedicado.
+        
+        Args:
+            original_file_path: Ruta al archivo original
+            
+        Returns:
+            Tuple[Path, str]: La ruta absoluta del sistema (Path) y la ruta web relativa
+        """
+        original_path = Path(original_file_path)
+        file_stem = original_path.stem
+        thumbnail_name = f"thumb_{file_stem}.jpg"
+        
+        # Asegurar que el directorio dedicado existe
+        settings.THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(settings.THUMBNAILS_DIR), 0o777)
+        
+        # Ruta absoluta del archivo
+        absolute_path = settings.THUMBNAILS_DIR / thumbnail_name
+        
+        # Ruta web relativa (debe coincidir con tu estructura de directorios)
+        web_path = f"/thumbnails/{thumbnail_name}"
+        
+        return absolute_path, web_path
+
     def _load_clip_model(self):
         if self.clip_model is None:
             from transformers import CLIPProcessor, CLIPModel
@@ -261,52 +268,75 @@ class MediaProcessor:
             metadata['duration'] = frame_count / fps if fps > 0 else None
             
             cap.release()
+            
         except Exception as e:
             print(f"Error extracting video metadata: {e}")
         
         return metadata
-    
+
     def _convert_to_degrees(self, values) -> float:
-        d, m, s = values
-        degrees = float(d.num) / float(d.den)
-        minutes = float(m.num) / float(m.den)
-        seconds = float(s.num) / float(s.den)
-        return degrees + (minutes / 60.0) + (seconds / 3600.0)
-    
+        """Convierte valores EXIF GPS a grados decimales"""
+        d = float(values[0].num) / float(values[0].den)
+        m = float(values[1].num) / float(values[1].den)
+        s = float(values[2].num) / float(values[2].den)
+        return d + (m / 60.0) + (s / 3600.0)
+
     def predict_event(self, file_path: str) -> Tuple[str, float]:
+        """
+        Predice el tipo de evento en una imagen usando CLIP.
+        """
         try:
             self._load_clip_model()
             
-            # Lista de eventos posibles
-            events = [
-                "beach day", "hiking trip", "birthday party", "wedding ceremony",
-                "graduation ceremony", "concert", "sports event", "family gathering",
-                "vacation", "holiday celebration", "business meeting", "conference",
-                "outdoor adventure", "camping trip", "city tour"
-            ]
-            
             # Cargar y preprocesar la imagen
             image = Image.open(file_path)
-            inputs = self.clip_processor(
-                images=image,
-                text=events,
+            inputs = self.clip_processor(images=image, return_tensors="pt", padding=True)
+            
+            # Lista de eventos para clasificar
+            event_texts = [
+                "a sports event or game",
+                "a conference or meeting",
+                "a party or celebration",
+                "a concert or musical performance",
+                "a wedding ceremony",
+                "a graduation ceremony",
+                "a protest or demonstration",
+                "a religious ceremony",
+                "a parade or festival",
+                "an exhibition or art show",
+                "a family gathering",
+                "a food event or dining",
+                "an outdoor activity or adventure",
+                "a business event",
+                "an educational event"
+            ]
+            
+            # Preprocesar textos
+            text_inputs = self.clip_processor(
+                text=event_texts,
                 return_tensors="pt",
                 padding=True
             )
             
-            # Obtener predicciones
-            outputs = self.clip_model(**inputs)
-            logits_per_image = outputs.logits_per_image
-            probs = torch.softmax(logits_per_image, dim=1)[0]
+            # Obtener embeddings de imagen y texto
+            with torch.no_grad():
+                image_features = self.clip_model.get_image_features(**inputs)
+                text_features = self.clip_model.get_text_features(**text_inputs)
             
-            # Obtener el evento más probable
-            max_prob, max_idx = torch.max(probs, dim=0)
-            predicted_event = events[max_idx]
-            confidence = float(max_prob)
+            # Normalizar features
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             
-            return predicted_event, confidence
+            # Calcular similaridad
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+            
+            # Obtener el evento más probable y su confianza
+            values, indices = similarity[0].topk(1)
+            event_type = event_texts[indices[0]].replace("a ", "").replace("an ", "")
+            confidence = float(values[0])
+            
+            return event_type, confidence
             
         except Exception as e:
             print(f"Error predicting event: {e}")
             return "unknown", 0.0
-        

@@ -26,7 +26,9 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUpload }) => {
             const invalidFiles = acceptedFiles.filter(file => {
                 const isImage = file.type.startsWith('image/');
                 const isVideo = file.type.startsWith('video/');
-                return !(isImage || isVideo);
+                // Aceptar archivos HEIC/HEIF por extensión aunque el tipo MIME no sea correcto
+                const isHeic = file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+                return !(isImage || isVideo || isHeic);
             });
 
             if (invalidFiles.length > 0) {
@@ -51,8 +53,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUpload }) => {
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
         accept: {
-            'image/*': ['.jpg', '.jpeg', '.png', '.heic'],
-            'video/*': ['.mp4', '.mov']
+            'image/*': ['.jpg', '.jpeg', '.png', '.heic', '.heif'],
+            'video/*': ['.mp4', '.mov'],
+            // Agregar explícitamente el tipo MIME de HEIC
+            'image/heic': ['.heic', '.heif']
         },
         maxSize: 100 * 1024 * 1024, // 100MB
         multiple: true,
@@ -85,7 +89,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUpload }) => {
                             : 'Arrastra fotos o videos aquí, o haz clic para seleccionar'}
                     </Typography>
                     <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                        Formatos soportados: JPG, PNG, HEIC, MP4, MOV
+                        Formatos soportados: JPG, PNG, HEIC/HEIF, MP4, MOV
                     </Typography>
                 </Box>
                 {uploading && (

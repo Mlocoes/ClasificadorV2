@@ -1,5 +1,9 @@
 FROM python:3.10-slim
 
+# Crear usuario no root
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g appuser -s /bin/bash -m appuser
+
 WORKDIR /app
 
 # Instalar dependencias del sistema
@@ -13,10 +17,15 @@ RUN apt-get update && \
     libsm6 \
     libxext6 \
     wget \
+    libheif-dev \
+    libde265-0 \
+    libheif1 \
+    libx265-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear directorios necesarios
-RUN mkdir -p /app/storage/uploads /app/storage/thumbnails
+# Crear directorios necesarios y establecer permisos
+RUN mkdir -p /app/storage/uploads /app/storage/thumbnails && \
+    chown -R appuser:appuser /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
