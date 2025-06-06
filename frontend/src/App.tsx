@@ -1,90 +1,272 @@
-import { useState, useEffect } from 'react';
-import { Container, Typography, Box, Alert, Snackbar } from '@mui/material';
-import FileUpload from './components/FileUpload';
-import MediaTable from './components/MediaTable';
+import { useState } from 'react';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import Box from '@mui/material/Box';
+import Alert from '@mui/material/Alert';
+import Snackbar from '@mui/material/Snackbar';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import ToggleButton from '@mui/material/ToggleButton';
+import GridViewIcon from '@mui/icons-material/GridView';
+import TableRowsIcon from '@mui/icons-material/TableRows';
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// Importar componentes
+import { Header, UploadArea, MediaGrid, MediaTable } from './components';
 import mediaService from './services/mediaService';
-import type { Media, MediaUpdate } from './services/mediaService';
-import './App.css';
+import type { Media } from './services/mediaService';
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            refetchOnWindowFocus: true,
+            retry: 1,
+            staleTime: 0,
+            gcTime: 30000,
+            refetchInterval: 10000,
+        },
+    },
+});
+
+// Tema personalizado Material-UI
+const theme = createTheme({
+    palette: {
+        mode: 'light',
+        primary: {
+            main: '#141414',
+        },
+        secondary: {
+            main: '#6b6b6b',
+        },
+        background: {
+            default: '#fafafa',
+            paper: '#ffffff',
+        },
+        text: {
+            primary: '#141414',
+            secondary: '#6b6b6b',
+        },
+        divider: '#dbdbdb',
+        action: {
+            hover: '#f5f5f5',
+            selected: '#ededed'
+        }
+    },
+    typography: {
+        fontFamily: '"Plus Jakarta Sans", "Noto Sans", sans-serif',
+        h6: {
+            fontSize: '18px',
+            fontWeight: 'bold',
+            letterSpacing: '-0.015em',
+        },
+        body1: {
+            fontSize: '14px',
+            lineHeight: 'normal',
+        },
+        body2: {
+            fontSize: '14px',
+            lineHeight: 'normal',
+            color: '#6b6b6b',
+        },
+    },
+    components: {
+        MuiButton: {
+            styleOverrides: {
+                root: {
+                    textTransform: 'none',
+                    borderRadius: '50px',
+                },
+            },
+        },
+        MuiPaper: {
+            styleOverrides: {
+                root: {
+                    borderRadius: '12px',
+                },
+            },
+        },
+    },
+});
 
 function App() {
-    const [media, setMedia] = useState<Media[]>([]);
-    const [alert, setAlert] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-        open: false,
-        message: '',
-        severity: 'success',
+    return (
+        <QueryClientProvider client={queryClient}>
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <AppContent />
+                <ReactQueryDevtools />
+            </ThemeProvider>
+        </QueryClientProvider>
+    );
+}
+
+function AppContent() {
+    const queryClient = useQueryClient();
+    const [isUploading, setIsUploading] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+    const [notification, setNotification] = useState<{
+        message: string;
+        type: 'success' | 'error';
+        open: boolean;
+    }>({ message: '', type: 'success', open: false });
+
+    const { 
+        data: mediaList = [], 
+        refetch 
+    } = useQuery({
+        queryKey: ['mediaList'],
+        queryFn: () => mediaService.getAllMedia(),
+        refetchInterval: 5000,
+        refetchIntervalInBackground: true
     });
 
-    const loadMedia = async () => {
-        try {
-            const data = await mediaService.getAllMedia();
-            setMedia(data);
-        } catch (error) {
-            showAlert('Error al cargar los medios', 'error');
-        }
-    };
-
-    useEffect(() => {
-        loadMedia();
-    }, []);
-
-    const showAlert = (message: string, severity: 'success' | 'error') => {
-        setAlert({ open: true, message, severity });
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type, open: true });
     };
 
     const handleUpload = async (files: File[]) => {
+        setIsUploading(true);
         try {
             for (const file of files) {
                 await mediaService.uploadFile(file);
             }
-            showAlert('Archivos subidos correctamente', 'success');
-            loadMedia();
+            
+            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
+            await refetch();
+            
+            showNotification('Archivos subidos exitosamente', 'success');
         } catch (error) {
-            showAlert('Error al subir los archivos', 'error');
+            console.error('Error uploading files:', error);
+            showNotification('Error al subir los archivos', 'error');
+        } finally {
+            setIsUploading(false);
         }
     };
 
-    const handleDelete = async (id: number) => {
+    const handleMediaDelete = async (id: number) => {
         try {
             await mediaService.deleteMedia(id);
-            showAlert('Archivo eliminado correctamente', 'success');
-            loadMedia();
+            
+            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
+            await refetch();
+            
+            showNotification('Archivo eliminado exitosamente', 'success');
         } catch (error) {
-            showAlert('Error al eliminar el archivo', 'error');
+            console.error('Error deleting media:', error);
+            showNotification('Error al eliminar el archivo', 'error');
         }
+    };
+    
+    const handleMediaEdit = (media: Media) => {
+        // Implementar lógica de edición si es necesaria
+        console.log('Editing media:', media);
     };
 
-    const handleUpdate = async (id: number, data: MediaUpdate) => {
-        try {
-            await mediaService.updateMedia(id, data);
-            showAlert('Archivo actualizado correctamente', 'success');
-            loadMedia();
-        } catch (error) {
-            showAlert('Error al actualizar el archivo', 'error');
-        }
+    const handleSearch = (query: string) => {
+        setSearchQuery(query);
     };
+
+    // Filtrar medios basado en la búsqueda
+    const filteredMedia = (mediaList as Media[]).filter(media => 
+        !searchQuery || 
+        media.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (media.event_type && media.event_type.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Typography variant="h4" component="h1" gutterBottom>
-                Organizador de Medios
-            </Typography>
+        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+            {/* Header */}
+            <Header 
+                onSearch={handleSearch}
+                searchValue={searchQuery}
+            />
 
-            <Box sx={{ mb: 4 }}>
-                <FileUpload onUpload={handleUpload} />
+            {/* Main Content */}
+            <Box sx={{ p: 3 }}>
+                {/* Upload Area */}
+                <UploadArea 
+                    onUpload={handleUpload}
+                    isLoading={isUploading}
+                />
+
+                {/* View Mode Toggle */}
+                <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    my: 3 
+                }}>
+                    <ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_, newViewMode) => {
+                            if (newViewMode !== null) {
+                                setViewMode(newViewMode);
+                            }
+                        }}
+                        size="small"
+                        sx={{
+                            bgcolor: 'background.paper',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: '50px',
+                            '& .MuiToggleButton-root': {
+                                border: 'none',
+                                borderRadius: '50px',
+                                px: 3,
+                                py: 1,
+                                '&.Mui-selected': {
+                                    bgcolor: 'primary.main',
+                                    color: 'white',
+                                    '&:hover': {
+                                        bgcolor: 'primary.dark',
+                                    }
+                                }
+                            }
+                        }}
+                    >
+                        <ToggleButton value="list" aria-label="vista de lista">
+                            <TableRowsIcon sx={{ mr: 1, fontSize: 18 }} />
+                            Lista
+                        </ToggleButton>
+                        <ToggleButton value="grid" aria-label="vista de cuadrícula">
+                            <GridViewIcon sx={{ mr: 1, fontSize: 18 }} />
+                            Cuadrícula
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                </Box>
+
+                {/* Media Content */}
+                {viewMode === 'grid' ? (
+                    <MediaGrid
+                        media={filteredMedia}
+                        onMediaDelete={handleMediaDelete}
+                    />
+                ) : (
+                    <MediaTable
+                        media={filteredMedia}
+                        onMediaDelete={handleMediaDelete}
+                        onMediaEdit={handleMediaEdit}
+                    />
+                )}
             </Box>
 
-            <MediaTable media={media} onDelete={handleDelete} onUpdate={handleUpdate} />
-
+            {/* Notification Snackbar */}
             <Snackbar
-                open={alert.open}
+                open={notification.open}
                 autoHideDuration={6000}
-                onClose={() => setAlert({ ...alert, open: false })}
+                onClose={() => setNotification({ ...notification, open: false })}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
-                <Alert severity={alert.severity} onClose={() => setAlert({ ...alert, open: false })}>
-                    {alert.message}
+                <Alert 
+                    severity={notification.type} 
+                    onClose={() => setNotification({ ...notification, open: false })}
+                    sx={{ borderRadius: '12px' }}
+                >
+                    {notification.message}
                 </Alert>
             </Snackbar>
-        </Container>
+        </Box>
     );
 }
 

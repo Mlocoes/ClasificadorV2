@@ -1,144 +1,220 @@
-import React, { useState, useEffect } from 'react';
-import {
-    Grid,
-    Card,
-    CardContent,
-    CardMedia,
-    Typography,
-    IconButton,
+import React from 'react';
+import { 
+    Grid, 
+    Card, 
+    CardMedia, 
+    CardContent, 
+    Typography, 
     Box,
-    CircularProgress
+    Button,
+    CircularProgress,
 } from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
+import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import { Media } from '../types/media';
-import { format } from 'date-fns';
-import { getLocationNameFromCoords } from '../services/locationService';
+import type { Media } from '../services/mediaService';
 
 interface MediaGridProps {
     media: Media[];
-    onDelete: (id: number) => void;
-    onEdit: (media: Media) => void;
+    onMediaSelect?: (media: Media) => void;
+    onMediaDelete?: (id: number) => Promise<void>;
+    isLoading?: boolean;
 }
 
-const MediaGrid: React.FC<MediaGridProps> = ({ media, onDelete, onEdit }) => {
-    const [locationNames, setLocationNames] = useState<{[key: number]: string}>({});
-    const [loadingLocations, setLoadingLocations] = useState<{[key: number]: boolean}>({});
-
-    useEffect(() => {
-        const loadLocationNames = async () => {
-            const locationPromises = media
-                .filter(item => item.latitude && item.longitude)
-                .map(async (item) => {
-                    try {
-                        setLoadingLocations(prev => ({ ...prev, [item.id]: true }));
-                        const locationName = await getLocationNameFromCoords(
-                            item.latitude!,
-                            item.longitude!
-                        );
-                        return { id: item.id, name: locationName };
-                    } catch (error) {
-                        console.error(`Error cargando ubicación para ID ${item.id}:`, error);
-                        return { id: item.id, name: 'Error al cargar ubicación' };
-                    } finally {
-                        setLoadingLocations(prev => ({ ...prev, [item.id]: false }));
-                    }
-                });
-            
-            const results = await Promise.allSettled(locationPromises);
-            const newLocationNames = results.reduce((acc, result) => {
-                if (result.status === 'fulfilled') {
-                    acc[result.value.id] = result.value.name;
-                }
-                return acc;
-            }, {} as {[key: number]: string});
-            
-            setLocationNames(prev => ({ ...prev, ...newLocationNames }));
-        };
-        
-        if (media.length > 0) {
-            loadLocationNames();
-        }
-    }, [media]);
-
+const MediaCard: React.FC<{ 
+    media: Media; 
+    onSelect?: (m: Media) => void; 
+    onDelete?: (id: number) => Promise<void>;
+}> = ({ media: item, onSelect, onDelete }) => {
+    // Función para formatear la fecha
     const formatDate = (dateString: string) => {
-        return format(new Date(dateString), 'dd/MM/yyyy HH:mm');
+        try {
+            const date = new Date(dateString);
+            return date.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+        } catch (e) {
+            return 'Fecha desconocida';
+        }
+    };
+
+    const handleDelete = async () => {
+        if (onDelete && window.confirm('¿Estás seguro de que quieres eliminar este archivo?')) {
+            await onDelete(item.id);
+        }
     };
 
     return (
-        <Grid container spacing={3}>
-            {media.map((item) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={item.id}>
-                    <Card>
-                        {item.thumbnail_path && (
-                            <CardMedia
-                                component="img"
-                                height="200"
-                                image={`http://localhost:8000${item.thumbnail_path.replace('../storage', '')}`}
-                                alt={item.filename}
-                                sx={{ objectFit: 'cover' }}
-                            />
-                        )}
-                        <CardContent>
-                            <Typography variant="subtitle1" noWrap>
-                                {item.filename}
-                            </Typography>
-                            
-                            <Box sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: 1, 
+        <Grid item xs={12} sm={6} md={4} lg={3}>
+            <Card
+                sx={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'relative',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    border: '1px solid #dbdbdb',
+                    boxShadow: 'none',
+                    '&:hover': {
+                        borderColor: '#b0b0b0',
+                    }
+                }}
+            >
+                <CardMedia
+                    component="img"
+                    height="180"
+                    image={`http://localhost:8000${item.thumbnail_path}`}
+                    alt={item.filename}
+                    sx={{ cursor: 'pointer', objectFit: 'cover' }}
+                    onClick={() => onSelect && onSelect(item)}
+                />
+                <CardContent sx={{ p: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                    <Typography 
+                        noWrap 
+                        sx={{
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            color: '#141414',
+                            lineHeight: 'normal'
+                        }}
+                    >
+                        {item.filename}
+                    </Typography>
+                    <Typography 
+                        sx={{ 
+                            mt: 0.5, 
+                            fontSize: '14px',
+                            fontWeight: 'normal',
+                            lineHeight: 'normal',
+                            color: '#141414'
+                        }}
+                    >
+                        {formatDate(item.uploaded_at)}
+                    </Typography>
+                    
+                    {item.event_type && (
+                        <Typography 
+                            sx={{ 
                                 mt: 1, 
-                                mb: 1 
-                            }}>
-                                <LocationOnIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                                {item.latitude && item.longitude ? (
-                                    loadingLocations[item.id] ? (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <CircularProgress size={16} />
-                                            <Typography variant="body2" color="text.secondary">
-                                                Cargando ubicación...
-                                            </Typography>
-                                        </Box>
-                                    ) : (
-                                        <Typography variant="body2" color="text.secondary" noWrap>
-                                            {locationNames[item.id] || `${item.latitude.toFixed(4)}, ${item.longitude.toFixed(4)}`}
-                                        </Typography>
-                                    )
-                                ) : (
-                                    <Typography variant="body2" color="text.secondary">
-                                        No disponible
-                                    </Typography>
-                                )}
-                            </Box>
-                            
-                            <Typography variant="body2" color="text.secondary">
-                                {item.mime_type}
-                            </Typography>
-                            
-                            {item.event_type && (
-                                <Typography variant="body2" color="text.secondary">
-                                    Evento: {item.event_type}
-                                    {item.event_confidence && ` (${(item.event_confidence * 100).toFixed(1)}%)`}
-                                </Typography>
-                            )}
-                            
-                            <Typography variant="body2" color="text.secondary">
-                                Fecha: {formatDate(item.uploaded_at)}
-                            </Typography>
-                            
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
-                                <IconButton size="small" onClick={() => onEdit(item)}>
-                                    <EditIcon />
-                                </IconButton>
-                                <IconButton size="small" onClick={() => onDelete(item.id)}>
-                                    <DeleteIcon />
-                                </IconButton>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Grid>
+                                fontSize: '12px',
+                                fontWeight: 'medium',
+                                color: '#6b6b6b',
+                                backgroundColor: '#f5f5f5',
+                                px: 1,
+                                py: 0.5,
+                                borderRadius: '4px',
+                                display: 'inline-block',
+                                width: 'fit-content'
+                            }}
+                        >
+                            {item.event_type}
+                            {item.event_confidence && ` (${(item.event_confidence * 100).toFixed(1)}%)`}
+                        </Typography>
+                    )}
+
+                    {(item.latitude !== null && item.longitude !== null) && (
+                        <Typography 
+                            sx={{ 
+                                mt: 1, 
+                                fontSize: '12px',
+                                fontWeight: 'medium',
+                                color: '#6b6b6b',
+                                backgroundColor: '#e8f4fd',
+                                px: 1,
+                                py: 0.5,
+                                borderRadius: '4px',
+                                display: 'inline-block',
+                                width: 'fit-content'
+                            }}
+                        >
+                            📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}
+                        </Typography>
+                    )}
+
+                    <Box sx={{ mt: 'auto', pt: 2, display: 'flex', gap: 1 }}>
+                        {onSelect && (
+                            <Button
+                                size="small"
+                                startIcon={<InfoIcon />}
+                                onClick={() => onSelect(item)}
+                                sx={{
+                                    fontSize: '12px',
+                                    textTransform: 'none',
+                                    color: '#6b6b6b',
+                                    '&:hover': {
+                                        backgroundColor: '#f5f5f5',
+                                    }
+                                }}
+                            >
+                                Ver
+                            </Button>
+                        )}
+                        {onDelete && (
+                            <Button
+                                size="small"
+                                startIcon={<DeleteIcon />}
+                                onClick={handleDelete}
+                                sx={{
+                                    fontSize: '12px',
+                                    textTransform: 'none',
+                                    color: '#d32f2f',
+                                    '&:hover': {
+                                        backgroundColor: '#ffebee',
+                                    }
+                                }}
+                            >
+                                Eliminar
+                            </Button>
+                        )}
+                    </Box>
+                </CardContent>
+            </Card>
+        </Grid>
+    );
+};
+
+const MediaGrid: React.FC<MediaGridProps> = ({ 
+    media, 
+    onMediaSelect, 
+    onMediaDelete, 
+    isLoading 
+}) => {
+    if (isLoading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    if (media.length === 0) {
+        return (
+            <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                p: 4,
+                minHeight: '200px'
+            }}>
+                <Typography sx={{ 
+                    fontSize: '16px',
+                    color: '#6b6b6b',
+                    textAlign: 'center'
+                }}>
+                    No hay archivos para mostrar
+                </Typography>
+            </Box>
+        );
+    }
+
+    return (
+        <Grid container spacing={3} sx={{ p: 3 }}>
+            {media.map((item) => (
+                <MediaCard
+                    key={item.id}
+                    media={item}
+                    onSelect={onMediaSelect}
+                    onDelete={onMediaDelete}
+                />
             ))}
         </Grid>
     );
