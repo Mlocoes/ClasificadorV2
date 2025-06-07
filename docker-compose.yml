@@ -1,6 +1,8 @@
 services:
   backend:
+    container_name: backend
     build: ./backend
+    user: "1000:1000"
     volumes:
       - ./storage:/app/storage:rw
       - ./cache:/app/cache:rw
@@ -11,26 +13,30 @@ services:
       - TRANSFORMERS_CACHE=/app/cache
       - DB_PATH=/app/storage/db.sqlite3
     healthcheck:
-      test: ["CMD", "python3", "-c", "import requests; response = requests.get('http://localhost:8000/api/v1/media/'); exit(0 if response.status_code in [200, 404] else 1)"]
+      test: ["CMD", "python", "/app/healthcheck.py"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
 
   frontend:
+    container_name: frontend
     build: ./frontend
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+      - ./frontend/package.json:/app/package.json:ro
+      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
     ports:
       - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+      - VITE_MEDIA_URL=http://localhost:8000
+    depends_on:
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    depends_on:
-      backend:
-        condition: service_healthy
-
-volumes:
-  storage:
-    driver: local

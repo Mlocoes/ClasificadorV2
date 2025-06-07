@@ -15,6 +15,42 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import type { Media } from '../services/mediaService';
+import { getMediaUrl } from '../services/mediaService';
+import { getLocationNameFromCoords } from '../services/locationService';
+import { translateEventType } from '../services/translationService';
+import { LoadingSkeleton } from './LoadingSkeleton';
+
+const LocationDisplay: React.FC<{ latitude: number | null; longitude: number | null }> = ({ latitude, longitude }) => {
+    const [locationName, setLocationName] = React.useState<string>('');
+    const [isLoading, setIsLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        const loadLocation = async () => {
+            if (latitude !== null && longitude !== null) {
+                setIsLoading(true);
+                try {
+                    const name = await getLocationNameFromCoords(latitude, longitude);
+                    setLocationName(name);
+                } catch (error) {
+                    console.error('Error cargando ubicación:', error);
+                    setLocationName(latitude && longitude ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : 'Sin ubicación');
+                } finally {
+                    setIsLoading(false);
+                }
+            } else {
+                setLocationName('Sin ubicación');
+            }
+        };
+
+        loadLocation();
+    }, [latitude, longitude]);
+
+    if (isLoading) {
+        return <CircularProgress size={20} />;
+    }
+
+    return <span>{locationName}</span>;
+};
 
 interface MediaTableProps {
     media: Media[];
@@ -31,7 +67,9 @@ const MediaTable: React.FC<MediaTableProps> = ({
     onMediaEdit,
     isLoading
 }) => {
-    const formatDate = (dateString: string) => {
+    const formatDate = (dateString: string | null | undefined) => {
+        if (!dateString) return 'Fecha desconocida';
+        
         try {
             const date = new Date(dateString);
             return date.toLocaleDateString('es-ES', {
@@ -53,11 +91,7 @@ const MediaTable: React.FC<MediaTableProps> = ({
     };
 
     if (isLoading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <CircularProgress />
-            </Box>
-        );
+        return <LoadingSkeleton count={5} variant="table" />;
     }
 
     if (media.length === 0) {
@@ -70,11 +104,7 @@ const MediaTable: React.FC<MediaTableProps> = ({
                 p: 4,
                 minHeight: '200px'
             }}>
-                <Typography sx={{ 
-                    fontSize: '16px',
-                    color: '#6b6b6b',
-                    textAlign: 'center'
-                }}>
+                <Typography variant="body1" color="textSecondary">
                     No hay archivos para mostrar
                 </Typography>
             </Box>
@@ -82,130 +112,54 @@ const MediaTable: React.FC<MediaTableProps> = ({
     }
 
     return (
-        <TableContainer component={Paper} sx={{ m: 3, borderRadius: '12px', border: '1px solid #dbdbdb' }}>
-            <Table sx={{ minWidth: 650 }} aria-label="tabla de archivos multimedia">
+        <TableContainer component={Paper}>
+            <Table>
                 <TableHead>
-                    <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }}>Vista previa</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }}>Nombre del archivo</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }}>Fecha de creación</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }}>Localización</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }}>Evento predicho</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#141414' }} align="right">Acciones</TableCell>
+                    <TableRow>
+                        <TableCell>Vista previa</TableCell>
+                        <TableCell>Nombre</TableCell>
+                        <TableCell>Fecha</TableCell>
+                        <TableCell>Ubicación</TableCell>
+                        <TableCell>Tipo de Evento</TableCell>
+                        <TableCell>Acciones</TableCell>
                     </TableRow>
                 </TableHead>
                 <TableBody>
                     {media.map((item) => (
-                        <TableRow 
-                            key={item.id}
-                            sx={{ 
-                                '&:last-child td, &:last-child th': { border: 0 },
-                                '&:hover': { backgroundColor: '#f9f9f9' }
-                            }}
-                        >
-                            <TableCell component="th" scope="row">
-                                <Box
-                                    component="img"
-                                    src={`http://localhost:8000${item.thumbnail_path}`}
+                        <TableRow key={item.id}>
+                            <TableCell>
+                                <img 
+                                    src={getMediaUrl(item.thumbnail_path) || getMediaUrl(item.file_path)} 
                                     alt={item.filename}
-                                    sx={{
-                                        width: 60,
-                                        height: 60,
-                                        objectFit: 'cover',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer'
-                                    }}
-                                    onClick={() => onMediaSelect && onMediaSelect(item)}
+                                    style={{ width: '100px', height: '100px', objectFit: 'cover', cursor: 'pointer' }}
+                                    onClick={() => onMediaSelect?.(item)}
                                 />
                             </TableCell>
+                            <TableCell>{item.filename}</TableCell>
+                            <TableCell>{formatDate(item.creation_date || item.uploaded_at || item.created_at)}</TableCell>
                             <TableCell>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 500 }}>
-                                    {item.filename}
-                                </Typography>
+                                <LocationDisplay 
+                                    latitude={item.latitude || null} 
+                                    longitude={item.longitude || null}
+                                />
                             </TableCell>
+                            <TableCell>{translateEventType(item.event_type)}</TableCell>
                             <TableCell>
-                                <Typography sx={{ fontSize: '14px', color: '#6b6b6b' }}>
-                                    {formatDate(item.uploaded_at)}
-                                </Typography>
-                            </TableCell>
-                            <TableCell>
-                                {(item.latitude !== null && item.longitude !== null) ? (
-                                    <Box
-                                        sx={{
-                                            backgroundColor: '#e8f4fd',
-                                            color: '#6b6b6b',
-                                            px: 1,
-                                            py: 0.5,
-                                            borderRadius: '4px',
-                                            fontSize: '12px',
-                                            fontWeight: 'medium',
-                                            display: 'inline-block',
-                                            maxWidth: '150px'
-                                        }}
-                                    >
-                                        📍 {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-                                    </Box>
-                                ) : (
-                                    <Typography sx={{ fontSize: '14px', color: '#9e9e9e' }}>
-                                        Sin ubicación
-                                    </Typography>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                                {item.event_type ? (
-                                    <Box
-                                        sx={{
-                                            backgroundColor: '#f5f5f5',
-                                            color: '#6b6b6b',
-                                            px: 1,
-                                            py: 0.5,
-                                            borderRadius: '4px',
-                                            fontSize: '12px',
-                                            fontWeight: 'medium',
-                                            display: 'inline-block'
-                                        }}
-                                    >
-                                        {item.event_type}
-                                    </Box>
-                                ) : (
-                                    <Typography sx={{ fontSize: '14px', color: '#9e9e9e' }}>
-                                        Sin clasificar
-                                    </Typography>
-                                )}
-                            </TableCell>
-                            <TableCell align="right">
-                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                <Box display="flex" gap={1}>
                                     {onMediaEdit && (
-                                        <Button
-                                            size="small"
+                                        <Button 
                                             startIcon={<EditIcon />}
                                             onClick={() => onMediaEdit(item)}
-                                            sx={{
-                                                fontSize: '12px',
-                                                textTransform: 'none',
-                                                color: '#6b6b6b',
-                                                minWidth: 'auto',
-                                                '&:hover': {
-                                                    backgroundColor: '#f5f5f5',
-                                                }
-                                            }}
+                                            size="small"
                                         >
                                             Editar
                                         </Button>
                                     )}
                                     <Button
-                                        size="small"
                                         startIcon={<DeleteIcon />}
                                         onClick={() => handleDelete(item.id)}
-                                        sx={{
-                                            fontSize: '12px',
-                                            textTransform: 'none',
-                                            color: '#d32f2f',
-                                            minWidth: 'auto',
-                                            '&:hover': {
-                                                backgroundColor: '#ffebee',
-                                            }
-                                        }}
+                                        color="error"
+                                        size="small"
                                     >
                                         Eliminar
                                     </Button>

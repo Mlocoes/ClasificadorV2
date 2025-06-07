@@ -1,24 +1,26 @@
 import axios, { AxiosError } from 'axios';
 
 const API_URL = 'http://localhost:8000/api/v1';
+const MEDIA_BASE_URL = 'http://localhost:8000';
 
+// Definición de tipos
 export interface Media {
     id: number;
     filename: string;
     file_path: string;
-    thumbnail_path: string | null;
-    mime_type: string;
     file_size: number;
-    width: number | null;
-    height: number | null;
-    duration: number | null;
-    latitude: number | null;
-    longitude: number | null;
-    creation_date: string | null;
-    event_type: string | null;
-    event_confidence: number | null;
-    uploaded_at: string;
-    updated_at: string | null;
+    created_at: string;
+    updated_at: string;
+    creation_date?: string;
+    uploaded_at?: string;
+    thumbnail_path?: string | null;
+    file_type: string;
+    width?: number | null;
+    height?: number | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    event_type?: string | null;
+    event_confidence?: number | null;
 }
 
 export interface MediaUpdate {
@@ -26,6 +28,21 @@ export interface MediaUpdate {
     latitude?: number;
     longitude?: number;
 }
+
+// Función para construir URLs de medios (archivos originales y miniaturas)
+export const getMediaUrl = (path: string | null | undefined): string => {
+    if (!path) return '';
+    
+    // Si la ruta ya es una URL completa, devolverla tal como está
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
+    
+    // Asegurarse de que la ruta comience con /
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    
+    return `${MEDIA_BASE_URL}${normalizedPath}`;
+};
 
 const handleError = (error: unknown) => {
     if (axios.isAxiosError(error)) {
