@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     SQLITE_URL: str = "sqlite:////app/storage/db.sqlite3"
     
     # Configuración CORS
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://localhost:3000", 
+        "http://frontend:3000",
+        "http://127.0.0.1:3000",
+        "http://192.168.0.7:3000",  # IP de red específica
+        "*"  # Permitir todos los orígenes para desarrollo
+    ]
     
     # Configuración de archivos
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB

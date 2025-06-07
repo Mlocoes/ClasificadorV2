@@ -6,6 +6,7 @@ import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
+import CircularProgress from '@mui/material/CircularProgress';
 import GridViewIcon from '@mui/icons-material/GridView';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -19,11 +20,12 @@ import type { Media } from './services/mediaService';
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            refetchOnWindowFocus: true,
-            retry: 1,
-            staleTime: 0,
-            gcTime: 30000,
-            refetchInterval: 10000,
+            refetchOnWindowFocus: false,
+            retry: 2,
+            staleTime: 30000, // Datos frescos por 30 segundos
+            gcTime: 5 * 60 * 1000, // Garbage collection después de 5 minutos
+            refetchInterval: 30000, // Recargar cada 30 segundos
+            refetchIntervalInBackground: false,
         },
     },
 });
@@ -113,12 +115,15 @@ function AppContent() {
 
     const { 
         data: mediaList = [], 
-        refetch 
-    } = useQuery({
+        isLoading 
+    } = useQuery<Media[]>({
         queryKey: ['mediaList'],
         queryFn: () => mediaService.getAllMedia(),
-        refetchInterval: 5000,
-        refetchIntervalInBackground: true
+        staleTime: 30000,
+        gcTime: 5 * 60 * 1000,
+        refetchInterval: 30000,
+        refetchOnMount: true,
+        refetchIntervalInBackground: false
     });
 
     const showNotification = (message: string, type: 'success' | 'error') => {
@@ -128,17 +133,23 @@ function AppContent() {
     const handleUpload = async (files: File[]) => {
         setIsUploading(true);
         try {
+            // Subir archivos uno por uno y manejar errores individualmente
             for (const file of files) {
-                await mediaService.uploadFile(file);
+                try {
+                    await mediaService.uploadFile(file);
+                } catch (error) {
+                    console.error(`Error uploading file ${file.name}:`, error);
+                    showNotification(`Error al subir el archivo ${file.name}`, 'error');
+                }
             }
             
+            // Recargar la lista después de subir todos los archivos
             await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
-            await refetch();
             
-            showNotification('Archivos subidos exitosamente', 'success');
+            showNotification('Archivos procesados exitosamente', 'success');
         } catch (error) {
-            console.error('Error uploading files:', error);
-            showNotification('Error al subir los archivos', 'error');
+            console.error('Error general en la subida:', error);
+            showNotification('Error al procesar los archivos', 'error');
         } finally {
             setIsUploading(false);
         }
@@ -148,13 +159,21 @@ function AppContent() {
         try {
             await mediaService.deleteMedia(id);
             
+            // Optimistic update - Eliminar el elemento de la caché inmediatamente
+            queryClient.setQueryData(['mediaList'], (old: Media[] | undefined) => {
+                return old ? old.filter(item => item.id !== id) : [];
+            });
+            
+            // Recargar datos del servidor para asegurar consistencia
             await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
-            await refetch();
             
             showNotification('Archivo eliminado exitosamente', 'success');
         } catch (error) {
             console.error('Error deleting media:', error);
             showNotification('Error al eliminar el archivo', 'error');
+            
+            // Recargar datos en caso de error para asegurar consistencia
+            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
         }
     };
     
@@ -173,6 +192,15 @@ function AppContent() {
         media.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (media.event_type && media.event_type.toLowerCase().includes(searchQuery.toLowerCase()))
     );
+
+    // Mostrar estado de carga
+    if (isLoading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>

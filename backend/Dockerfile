@@ -19,32 +19,31 @@ RUN apt-get update && \
     wget \
     libheif-dev \
     libde265-0 \
-    libheif1 \
-    libx265-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Crear directorios necesarios y establecer permisos
-RUN mkdir -p /app/storage/uploads /app/storage/thumbnails && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app/storage/uploads /app/storage/thumbnails /app/cache && \
+    chown -R appuser:appuser /app/storage /app/cache && \
+    chmod -R 755 /app/storage /app/cache
 
-COPY requirements.txt ./
+# Copiar y dar permisos al script de healthcheck
+COPY healthcheck.py /app/healthcheck.py
+RUN chmod +x /app/healthcheck.py && \
+    chown appuser:appuser /app/healthcheck.py
+
+# Copiar el código de la aplicación
+COPY --chown=appuser:appuser ./app /app/app
+COPY --chown=appuser:appuser ./requirements.txt /app/
+
+# Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ ./app/
+# Cambiar al usuario no root
+USER appuser
 
-# Instalar requests para el healthcheck
-RUN pip install requests
-
-# Asegurarnos de que los directorios tengan los permisos correctos
-RUN chmod -R 777 /app/storage && \
-    mkdir -p /app/cache && \
-    chmod -R 777 /app/cache
-
-# Agregar script de healthcheck
-COPY healthcheck.py /app/
-RUN chmod +x /app/healthcheck.py
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ["python3", "/app/healthcheck.py"]
-
+# Comando por defecto
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Configurar el healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD ["./healthcheck.py"]

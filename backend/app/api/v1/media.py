@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import List
 import os
 import re
 import shutil
+import hashlib
+import json
 from pathlib import Path
 from app.core.config import settings
 from app.core.database import get_db
@@ -148,9 +150,55 @@ def list_media(
     limit: int = 100,
     db: Session = Depends(get_db)
 ):
+    """Obtener lista de medios con caché efectiva"""
+    
+    # Generar ETag basado en los parámetros de consulta
+    params = f"{skip}-{limit}"
+    etag = hashlib.md5(params.encode()).hexdigest()
+    
+    # Obtener media items
     media_items = media_crud.get_all_media(db, skip=skip, limit=limit)
+    
+    # Generar nuevo ETag basado en los datos
+    data_etag = hashlib.md5(json.dumps([m.id for m in media_items]).encode()).hexdigest()
+    
+    # Configurar headers de caché
+    headers = {
+        'ETag': data_etag,
+        'Cache-Control': 'public, max-age=30',  # Cache por 30 segundos
+        'Vary': 'Accept-Encoding'  # Variar caché por compresión
+    }
+    
     print(f"DEBUG: Recuperados {len(media_items)} elementos de media (skip={skip}, limit={limit})")
-    return media_items
+    
+    # Convertir objetos SQLAlchemy a diccionarios serializables
+    media_dicts = []
+    for m in media_items:
+        media_dict = {
+            'id': m.id,
+            'filename': m.filename,
+            'file_path': m.file_path,
+            'thumbnail_path': m.thumbnail_path,
+            'mime_type': m.mime_type,
+            'file_size': m.file_size,
+            'width': m.width,
+            'height': m.height,
+            'duration': m.duration,
+            'latitude': m.latitude,
+            'longitude': m.longitude,
+            'creation_date': m.creation_date.isoformat() if m.creation_date else None,
+            'event_type': m.event_type,
+            'event_confidence': m.event_confidence,
+            'uploaded_at': m.uploaded_at.isoformat() if m.uploaded_at else None,
+            'updated_at': m.updated_at.isoformat() if m.updated_at else None
+        }
+        media_dicts.append(media_dict)
+    
+    return Response(
+        content=json.dumps(media_dicts),
+        media_type='application/json',
+        headers=headers
+    )
 
 @router.get("/{media_id}", response_model=Media)
 def get_media(
