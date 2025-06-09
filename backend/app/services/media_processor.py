@@ -292,7 +292,7 @@ class MediaProcessor:
             image = Image.open(file_path)
             inputs = self.clip_processor(images=image, return_tensors="pt", padding=True)
             
-            # Lista de eventos para clasificar
+            # Lista de eventos para clasificar (en inglés para el modelo CLIP)
             event_texts = [
                 "a sports event or game",
                 "a conference or meeting",
@@ -310,6 +310,25 @@ class MediaProcessor:
                 "a business event",
                 "an educational event"
             ]
+            
+            # Mapeo de eventos en inglés a español
+            event_translation = {
+                "sports event or game": "evento deportivo",
+                "conference or meeting": "conferencia",
+                "party or celebration": "fiesta",
+                "concert or musical performance": "concierto",
+                "wedding ceremony": "boda",
+                "graduation ceremony": "graduación",
+                "protest or demonstration": "protesta",
+                "religious ceremony": "ceremonia religiosa",
+                "parade or festival": "festival",
+                "exhibition or art show": "exhibición",
+                "family gathering": "reunión familiar",
+                "food event or dining": "evento gastronómico",
+                "outdoor activity or adventure": "actividad al aire libre",
+                "business event": "evento de negocios",
+                "educational event": "evento educativo"
+            }
             
             # Preprocesar textos
             text_inputs = self.clip_processor(
@@ -332,8 +351,11 @@ class MediaProcessor:
             
             # Obtener el evento más probable y su confianza
             values, indices = similarity[0].topk(1)
-            event_type = event_texts[indices[0]].replace("a ", "").replace("an ", "")
+            english_event = event_texts[indices[0]].replace("a ", "").replace("an ", "")
             confidence = float(values[0])
+            
+            # Traducir el evento al español
+            event_type = event_translation.get(english_event, english_event)
             
             return event_type, confidence
             

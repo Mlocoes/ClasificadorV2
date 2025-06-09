@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
@@ -7,6 +7,8 @@ import Snackbar from '@mui/material/Snackbar';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
 import CircularProgress from '@mui/material/CircularProgress';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 import GridViewIcon from '@mui/icons-material/GridView';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,17 +17,17 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 // Importar componentes
 import { Header, UploadArea, MediaGrid, MediaTable } from './components';
 import mediaService from './services/mediaService';
-import type { Media } from './services/mediaService';
+import type { Media, MediaUpdate } from './services/mediaService';
 
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
-            refetchOnWindowFocus: false,
-            retry: 2,
-            staleTime: 30000, // Datos frescos por 30 segundos
+            refetchOnWindowFocus: 'always', // Recargar siempre al volver a la ventana
+            retry: 1,
+            staleTime: 0, // Los datos se consideran obsoletos inmediatamente
             gcTime: 5 * 60 * 1000, // Garbage collection después de 5 minutos
-            refetchInterval: 30000, // Recargar cada 30 segundos
-            refetchIntervalInBackground: false,
+            refetchOnMount: 'always', // Recargar siempre al montar el componente
+            refetchOnReconnect: 'always', // Recargar siempre al reconectar
         },
     },
 });
@@ -107,6 +109,7 @@ function AppContent() {
     const [isUploading, setIsUploading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+    const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
     const [notification, setNotification] = useState<{
         message: string;
         type: 'success' | 'error';
@@ -115,16 +118,24 @@ function AppContent() {
 
     const { 
         data: mediaList = [], 
-        isLoading 
+        isLoading,
+        refetch,
+        isRefetching,
+        dataUpdatedAt
     } = useQuery<Media[]>({
         queryKey: ['mediaList'],
         queryFn: () => mediaService.getAllMedia(),
-        staleTime: 30000,
-        gcTime: 5 * 60 * 1000,
-        refetchInterval: 30000,
-        refetchOnMount: true,
-        refetchIntervalInBackground: false
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: 'always',
+        refetchIntervalInBackground: false,
+        retry: 1
     });
+    
+    // Actualizar la marca de tiempo cuando cambian los datos
+    useEffect(() => {
+        setLastUpdate(new Date());
+    }, [dataUpdatedAt]);
 
     const showNotification = (message: string, type: 'success' | 'error') => {
         setNotification({ message, type, open: true });
@@ -144,7 +155,8 @@ function AppContent() {
             }
             
             // Recargar la lista después de subir todos los archivos
-            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
+            queryClient.removeQueries({ queryKey: ['mediaList'] });
+            await refetch();
             
             showNotification('Archivos procesados exitosamente', 'success');
         } catch (error) {
@@ -156,30 +168,39 @@ function AppContent() {
     };
 
     const handleMediaDelete = async (id: number) => {
+        if (!window.confirm('¿Estás seguro de que quieres eliminar este archivo?')) {
+            return;
+        }
+
         try {
             await mediaService.deleteMedia(id);
-            
-            // Optimistic update - Eliminar el elemento de la caché inmediatamente
-            queryClient.setQueryData(['mediaList'], (old: Media[] | undefined) => {
-                return old ? old.filter(item => item.id !== id) : [];
-            });
-            
-            // Recargar datos del servidor para asegurar consistencia
-            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
-            
+            queryClient.removeQueries({ queryKey: ['mediaList'] });
+            await refetch();
             showNotification('Archivo eliminado exitosamente', 'success');
         } catch (error) {
-            console.error('Error deleting media:', error);
+            console.error('Error al eliminar archivo:', error);
             showNotification('Error al eliminar el archivo', 'error');
-            
-            // Recargar datos en caso de error para asegurar consistencia
-            await queryClient.invalidateQueries({ queryKey: ['mediaList'] });
+            await refetch();
         }
     };
     
-    const handleMediaEdit = (media: Media) => {
-        // Implementar lógica de edición si es necesaria
-        console.log('Editing media:', media);
+    const handleMediaEdit = async (media: Media) => {
+        try {
+            const updateData: MediaUpdate = {
+                event_type: media.event_type ?? null,
+                latitude: media.latitude ?? null,
+                longitude: media.longitude ?? null
+            };
+            
+            await mediaService.updateMedia(media.id, updateData);
+            queryClient.removeQueries({ queryKey: ['mediaList'] });
+            await refetch();
+            showNotification('Archivo actualizado exitosamente', 'success');
+        } catch (error) {
+            console.error('Error al actualizar archivo:', error);
+            showNotification('Error al actualizar el archivo', 'error');
+            await refetch();
+        }
     };
 
     const handleSearch = (query: string) => {
@@ -193,7 +214,7 @@ function AppContent() {
         (media.event_type && media.event_type.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    // Mostrar estado de carga
+    // Mostrar estado de carga inicial
     if (isLoading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -218,18 +239,41 @@ function AppContent() {
                     isLoading={isUploading}
                 />
 
-                {/* View Mode Toggle */}
+                {/* View Mode Toggle and Last Update */}
                 <Box sx={{ 
                     display: 'flex', 
-                    justifyContent: 'center', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
                     my: 3 
                 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Typography variant="body2" color="textSecondary" sx={{ mr: 1 }}>
+                            Última actualización: {lastUpdate.toLocaleTimeString()}
+                        </Typography>
+                        <Button 
+                            size="small" 
+                            onClick={() => refetch()} 
+                            disabled={isRefetching}
+                            sx={{ minWidth: 'auto', p: 0.5, ml: 1 }}
+                        >
+                            {isRefetching ? (
+                                <CircularProgress size={16} />
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                    <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                                </svg>
+                            )}
+                        </Button>
+                    </Box>
                     <ToggleButtonGroup
                         value={viewMode}
                         exclusive
                         onChange={(_, newViewMode) => {
                             if (newViewMode !== null) {
                                 setViewMode(newViewMode);
+                                // Recargar datos al cambiar el modo de vista
+                                refetch();
                             }
                         }}
                         size="small"
@@ -265,16 +309,36 @@ function AppContent() {
                 </Box>
 
                 {/* Media Content */}
+                {isRefetching && (
+                    <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'center', 
+                        alignItems: 'center',
+                        position: 'fixed',
+                        bottom: '20px',
+                        right: '20px',
+                        zIndex: 1000,
+                        bgcolor: 'background.paper',
+                        boxShadow: 3,
+                        borderRadius: '50%',
+                        p: 1
+                    }}>
+                        <CircularProgress size={24} />
+                    </Box>
+                )}
+                
                 {viewMode === 'grid' ? (
                     <MediaGrid
                         media={filteredMedia}
                         onMediaDelete={handleMediaDelete}
+                        isLoading={isRefetching}
                     />
                 ) : (
                     <MediaTable
                         media={filteredMedia}
                         onMediaDelete={handleMediaDelete}
                         onMediaEdit={handleMediaEdit}
+                        isLoading={isRefetching}
                     />
                 )}
             </Box>

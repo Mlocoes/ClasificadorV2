@@ -3,6 +3,11 @@ import axios, { AxiosError } from 'axios';
 const API_URL = 'http://localhost:8000/api/v1';
 const MEDIA_BASE_URL = 'http://localhost:8000';
 
+// Configurar axios para evitar caché
+axios.defaults.headers.common['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+axios.defaults.headers.common['Pragma'] = 'no-cache';
+axios.defaults.headers.common['Expires'] = '0';
+
 // Definición de tipos
 export interface Media {
     id: number;
@@ -24,9 +29,9 @@ export interface Media {
 }
 
 export interface MediaUpdate {
-    event_type?: string;
-    latitude?: number;
-    longitude?: number;
+    event_type?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
 }
 
 // Función para construir URLs de medios (archivos originales y miniaturas)
@@ -75,7 +80,9 @@ const mediaService = {
     
     async getAllMedia(): Promise<Media[]> {
         try {
-            const response = await axios.get(`${API_URL}/media/`);
+            // Añadir un timestamp como parámetro de consulta para evitar caché
+            const cacheBuster = new Date().getTime();
+            const response = await axios.get(`${API_URL}/media/?timestamp=${cacheBuster}`);
             return response.data;
         } catch (error) {
             handleError(error);
@@ -101,6 +108,17 @@ const mediaService = {
             throw error;
         }
     },
+};
+
+// Función para actualizar un medio
+export const updateMedia = async (id: number, data: MediaUpdate): Promise<Media> => {
+    try {
+        const response = await axios.put(`${API_URL}/media/${id}`, data);
+        return response.data;
+    } catch (error) {
+        handleError(error);
+        throw error;
+    }
 };
 
 export default mediaService;

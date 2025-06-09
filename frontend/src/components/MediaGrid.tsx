@@ -199,7 +199,7 @@ const MediaGrid: React.FC<MediaGridProps> = ({
     onMediaDelete,
     isLoading
 }) => {
-    if (isLoading) {
+    if (isLoading && media.length === 0) {
         return <LoadingSkeleton count={8} variant="card" />;
     }
 
