@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     STORAGE_DIR: Path = Path("/app/storage")
     UPLOADS_DIR: Path = STORAGE_DIR / "uploads"
     THUMBNAILS_DIR: Path = STORAGE_DIR / "thumbnails"
+    PROCESSED_DIR: Path = STORAGE_DIR / "processed"
     
     # Base de datos
     SQLITE_URL: str = "sqlite:////app/storage/db.sqlite3"

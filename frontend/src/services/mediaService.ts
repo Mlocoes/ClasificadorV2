@@ -19,6 +19,7 @@ export interface Media {
     creation_date?: string;
     uploaded_at?: string;
     thumbnail_path?: string | null;
+    processed_file_path?: string | null;
     file_type: string;
     width?: number | null;
     height?: number | null;

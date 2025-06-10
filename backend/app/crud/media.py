@@ -70,6 +70,20 @@ def delete_media(db: Session, media_id: int) -> bool:
         except Exception as e:
             print(f"Error eliminando miniatura {thumb_path}: {e}")
     
+    # Eliminar archivo procesado
+    if db_media.processed_file_path:
+        # Eliminar archivo en /app/storage/processed/
+        processed_filename = db_media.processed_file_path.replace('/processed/', '')
+        processed_path = Path('/app/storage/processed') / processed_filename
+        try:
+            print(f"Intentando eliminar archivo procesado: {processed_path}")
+            if processed_path.exists():
+                os.chmod(str(processed_path), 0o666)  # Asegurar permisos de escritura
+                os.remove(str(processed_path))
+                print(f"Archivo procesado eliminado: {processed_path}")
+        except Exception as e:
+            print(f"Error eliminando archivo procesado {processed_path}: {e}")
+    
     # Eliminar registro de base de datos
     db.delete(db_media)
     db.commit()

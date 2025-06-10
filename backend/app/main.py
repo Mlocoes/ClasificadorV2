@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 # Crear y asegurar directorios de almacenamiento
-directories = [settings.STORAGE_DIR, settings.UPLOADS_DIR, settings.THUMBNAILS_DIR]
+directories = [settings.STORAGE_DIR, settings.UPLOADS_DIR, settings.THUMBNAILS_DIR, settings.PROCESSED_DIR]
 for directory in directories:
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -44,6 +44,7 @@ for directory in directories:
 # Montar directorios estáticos
 app.mount("/uploads", StaticFiles(directory=str(settings.UPLOADS_DIR)), name="uploads")
 app.mount("/thumbnails", StaticFiles(directory=str(settings.THUMBNAILS_DIR)), name="thumbnails")
+app.mount("/processed", StaticFiles(directory=str(settings.PROCESSED_DIR)), name="processed")
 
 # Registrar rutas
 app.include_router(media.router, prefix=f"{settings.API_V1_STR}/media", tags=["media"])

@@ -133,6 +133,17 @@ async def upload_media(
             db_media.event_confidence = confidence
             print(f"DEBUG: Evento predicho - {event_type} ({confidence})")
         
+        # Crear copia del archivo con formato fecha-evento en directorio processed
+        print(f"DEBUG: Creando copia procesada del archivo con formato fecha-evento")
+        processed_path = media_processor.create_processed_copy(
+            str(file_path), 
+            db_media.creation_date, 
+            db_media.event_type
+        )
+        if processed_path:
+            print(f"DEBUG: Copia procesada creada exitosamente en: {processed_path}")
+            db_media.processed_file_path = processed_path
+        
         print(f"DEBUG: Guardando cambios en BD")
         db.commit()
         db.refresh(db_media)
@@ -179,6 +190,7 @@ def list_media(
             'filename': m.filename,
             'file_path': m.file_path,
             'thumbnail_path': m.thumbnail_path,
+            'processed_file_path': m.processed_file_path,
             'mime_type': m.mime_type,
             'file_size': m.file_size,
             'width': m.width,
@@ -216,10 +228,36 @@ def update_media(
     media_update: MediaUpdate,
     db: Session = Depends(get_db)
 ):
-    db_media = media_crud.update_media(db, media_id, media_update)
+    # Obtener el medio antes de actualizar
+    db_media = media_crud.get_media(db, media_id)
     if db_media is None:
         raise HTTPException(status_code=404, detail="Media not found")
-    return db_media
+        
+    # Actualizar datos
+    updated_media = media_crud.update_media(db, media_id, media_update)
+    
+    # Si se actualizó el tipo de evento, regenerar el archivo procesado
+    if media_update.event_type is not None:
+        print(f"DEBUG: Se actualizó el evento a {media_update.event_type}. Regenerando archivo procesado...")
+        
+        # Construir ruta absoluta al archivo original
+        original_file_path = settings.STORAGE_DIR / db_media.file_path.lstrip('/')
+        
+        # Si existe el archivo, crear una nueva versión procesada
+        if original_file_path.exists():
+            processed_path = media_processor.create_processed_copy(
+                str(original_file_path),
+                db_media.creation_date, 
+                updated_media.event_type
+            )
+            
+            if processed_path:
+                print(f"DEBUG: Nueva versión del archivo procesado creada en: {processed_path}")
+                updated_media.processed_file_path = processed_path
+                db.commit()
+                db.refresh(updated_media)
+    
+    return updated_media
 
 @router.delete("/{media_id}")
 def delete_media(
@@ -230,3 +268,61 @@ def delete_media(
     if not success:
         raise HTTPException(status_code=404, detail="Media not found")
     return {"message": "Media deleted successfully"}
+
+@router.post("/regenerate-processed-files/", response_model=dict)
+def regenerate_processed_files(
+    db: Session = Depends(get_db)
+):
+    """
+    Regenera todos los archivos procesados basados en la fecha y tipo de evento.
+    """
+    try:
+        # Obtener todos los archivos
+        all_media = media_crud.get_all_media(db)
+        
+        count_success = 0
+        count_failed = 0
+        
+        for media_item in all_media:
+            try:
+                # Solo procesar si tiene ruta de archivo
+                if not media_item.file_path:
+                    continue
+                    
+                # Construir ruta absoluta al archivo original
+                original_file_path = settings.STORAGE_DIR / media_item.file_path.lstrip('/')
+                
+                # Verificar que el archivo exista
+                if not original_file_path.exists():
+                    print(f"Archivo no encontrado: {original_file_path}")
+                    count_failed += 1
+                    continue
+                    
+                # Crear archivo procesado
+                processed_path = media_processor.create_processed_copy(
+                    str(original_file_path),
+                    media_item.creation_date,
+                    media_item.event_type
+                )
+                
+                if processed_path:
+                    # Actualizar la ruta en la base de datos
+                    media_item.processed_file_path = processed_path
+                    db.commit()
+                    print(f"Archivo procesado regenerado: {processed_path}")
+                    count_success += 1
+                else:
+                    count_failed += 1
+                    
+            except Exception as e:
+                print(f"Error procesando archivo {media_item.id} - {media_item.filename}: {str(e)}")
+                count_failed += 1
+        
+        return {
+            "message": f"Proceso completado. {count_success} archivos procesados correctamente. {count_failed} archivos fallaron.",
+            "success_count": count_success,
+            "failed_count": count_failed
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error regenerando archivos: {str(e)}")

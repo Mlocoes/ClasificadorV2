@@ -7,15 +7,18 @@ import {
     Typography, 
     Box,
     Button,
-    CircularProgress,
+    CircularProgress
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import DownloadIcon from '@mui/icons-material/Download';
 import type { Media } from '../services/mediaService';
-import { getMediaUrl } from '../services/mediaService';
-import { getLocationNameFromCoords } from '../services/locationService';
-import { translateEventType } from '../services/translationService';
+import {
+    getMediaUrl,
+    getLocationNameFromCoords,
+    translateEventType
+} from '../services';
 import { LoadingSkeleton } from './LoadingSkeleton';
 
 interface MediaGridProps {
@@ -160,6 +163,21 @@ const MediaCard: React.FC<{
                                     ` (${(item.event_confidence * 100).toFixed(1)}%)`
                                 }
                             </Typography>
+                        )}
+
+                        {item.processed_file_path && (
+                            <Button
+                                component="a"
+                                href={getMediaUrl(item.processed_file_path)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                startIcon={<DownloadIcon />}
+                                size="small"
+                                sx={{ mt: 1 }}
+                                variant="outlined"
+                            >
+                                Archivo procesado
+                            </Button>
                         )}
 
                         <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>

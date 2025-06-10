@@ -19,6 +19,7 @@ class Media(MediaBase):
     id: int
     file_path: str
     thumbnail_path: Optional[str] = None
+    processed_file_path: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[float] = None

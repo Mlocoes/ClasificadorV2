@@ -6,6 +6,7 @@ import cv2
 import exifread
 from datetime import datetime
 import torch
+import shutil
 from app.core.config import settings
 
 # Importación condicional de pyheif
@@ -362,3 +363,73 @@ class MediaProcessor:
         except Exception as e:
             print(f"Error predicting event: {e}")
             return "unknown", 0.0
+    
+    def create_processed_copy(self, original_file_path: str, creation_date: Optional[datetime] = None, event_type: Optional[str] = None) -> Optional[str]:
+        """
+        Crea una copia del archivo original con un nuevo nombre basado en la fecha y tipo de evento
+        en el directorio processed.
+        
+        Args:
+            original_file_path: Ruta al archivo original
+            creation_date: Fecha de creación del archivo, si está disponible
+            event_type: Tipo de evento asociado al archivo, si está disponible
+            
+        Returns:
+            Optional[str]: Ruta web relativa al archivo procesado, o None si hay un error
+        """
+        try:
+            # Asegurar que el directorio processed existe
+            settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+            os.chmod(str(settings.PROCESSED_DIR), 0o777)
+            
+            # Obtener la fecha
+            date_str = "sin-fecha"
+            if creation_date:
+                date_str = creation_date.strftime('%Y-%m-%d')
+            else:
+                # Intentar obtener la fecha de la última modificación del archivo
+                try:
+                    file_mtime = os.path.getmtime(original_file_path)
+                    date_obj = datetime.fromtimestamp(file_mtime)
+                    date_str = date_obj.strftime('%Y-%m-%d')
+                except Exception as e:
+                    print(f"No se pudo obtener la fecha de modificación: {e}")
+            
+            # Normalizar el tipo de evento
+            event_str = "sin-evento"
+            if event_type:
+                # Reemplazar espacios y caracteres especiales
+                event_str = event_type.lower().replace(" ", "-").replace("/", "-")
+                event_str = ''.join(c for c in event_str if c.isalnum() or c == '-')
+            
+            # Crear el nuevo nombre de archivo
+            original_path = Path(original_file_path)
+            file_ext = original_path.suffix.lower()
+            new_filename = f"{date_str}-{event_str}{file_ext}"
+            
+            # Verificar si ya existe un archivo con ese nombre y añadir un sufijo si es necesario
+            target_path = settings.PROCESSED_DIR / new_filename
+            counter = 1
+            while target_path.exists():
+                new_filename = f"{date_str}-{event_str}-{counter}{file_ext}"
+                target_path = settings.PROCESSED_DIR / new_filename
+                counter += 1
+            
+            # Copiar el archivo
+            print(f"Copiando archivo a: {target_path}")
+            shutil.copy2(original_file_path, str(target_path))
+            
+            # Verificar que la copia fue exitosa
+            if target_path.exists():
+                os.chmod(str(target_path), 0o777)
+                print(f"Archivo procesado creado correctamente en {target_path}")
+                # Ruta web relativa
+                web_path = f"/processed/{new_filename}"
+                return web_path
+            else:
+                print(f"ERROR: No se pudo crear el archivo procesado en {target_path}")
+                return None
+                
+        except Exception as e:
+            print(f"Error al crear copia procesada: {e}")
+            return None

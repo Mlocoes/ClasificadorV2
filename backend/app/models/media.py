@@ -20,6 +20,9 @@ class Media(Base):
     longitude = Column(Float, nullable=True)
     creation_date = Column(DateTime, nullable=True)
     
+    # Archivo procesado con formato fecha-evento
+    processed_file_path = Column(String, nullable=True)
+    
     # Datos CLIP
     event_type = Column(String, nullable=True)
     event_confidence = Column(Float, nullable=True)

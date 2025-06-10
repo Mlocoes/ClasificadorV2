@@ -16,7 +16,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // Importar componentes
 import { Header, UploadArea, MediaGrid, MediaTable } from './components';
-import mediaService from './services/mediaService';
+import { mediaService } from './services';
 import type { Media, MediaUpdate } from './services/mediaService';
 
 const queryClient = new QueryClient({
