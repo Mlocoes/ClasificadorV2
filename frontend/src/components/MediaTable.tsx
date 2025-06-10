@@ -16,14 +16,19 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    MenuItem
+    MenuItem,
+    Autocomplete,
+    InputAdornment
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SearchIcon from '@mui/icons-material/Search';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
 import type { Media } from '../services/mediaService';
-import { getMediaUrl } from '../services/mediaService';
+import { getMediaUrl } from '../services';
 import { getLocationNameFromCoords } from '../services/locationService';
 import { translateEventType } from '../services/translationService';
+import { searchPlaces } from '../services/geocodingService';
 import { LoadingSkeleton } from './LoadingSkeleton';
 
 const LocationDisplay: React.FC<{ latitude: number | null; longitude: number | null }> = ({ latitude, longitude }) => {
@@ -79,26 +84,73 @@ const EditDialog: React.FC<EditDialogProps> = ({ open, media, onClose, onSave })
         latitude?: string;
         longitude?: string;
     }>({});
+    const [locationQuery, setLocationQuery] = React.useState('');
+    const [locationOptions, setLocationOptions] = React.useState<{
+        id: string;
+        name: string;
+        displayName: string;
+        latitude: number;
+        longitude: number;
+    }[]>([]);
+    const [isLoadingLocations, setIsLoadingLocations] = React.useState(false);
     
     const eventTypes = [
         'wedding', 'conference', 'sports', 'concert', 'party', 
         'reunion', 'travel', 'birthday', 'graduation', 'family'
     ];
 
-    const validateCoordinates = () => {
-        const newErrors: {latitude?: string; longitude?: string} = {};            const lat = editedMedia.latitude;
-            const lon = editedMedia.longitude;
+    // Buscar lugares cuando cambia el texto de búsqueda
+    React.useEffect(() => {
+        const fetchPlaces = async () => {
+            if (locationQuery.length >= 3) {
+                setIsLoadingLocations(true);
+                try {
+                    const places = await searchPlaces(locationQuery);
+                    setLocationOptions(places);
+                } catch (error) {
+                    console.error("Error buscando lugares:", error);
+                    setLocationOptions([]);
+                } finally {
+                    setIsLoadingLocations(false);
+                }
+            } else {
+                setLocationOptions([]);
+            }
+        };
 
-            if (lat !== undefined && lat !== null && (lat < -90 || lat > 90)) {
-                newErrors.latitude = 'La latitud debe estar entre -90 y 90';
-            }
+        const debounceTimer = setTimeout(() => {
+            fetchPlaces();
+        }, 500);
+
+        return () => clearTimeout(debounceTimer);
+    }, [locationQuery]);
+
+    const validateCoordinates = () => {
+        const newErrors: {latitude?: string; longitude?: string} = {};            
+        const lat = editedMedia.latitude;
+        const lon = editedMedia.longitude;
+
+        if (lat !== undefined && lat !== null && (lat < -90 || lat > 90)) {
+            newErrors.latitude = 'La latitud debe estar entre -90 y 90';
+        }
             
-            if (lon !== undefined && lon !== null && (lon < -180 || lon > 180)) {
-                newErrors.longitude = 'La longitud debe estar entre -180 y 180';
-            }
+        if (lon !== undefined && lon !== null && (lon < -180 || lon > 180)) {
+            newErrors.longitude = 'La longitud debe estar entre -180 y 180';
+        }
         
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
+    };
+
+    // Limpiar las coordenadas
+    const handleClearCoordinates = () => {
+        setEditedMedia({
+            ...editedMedia,
+            latitude: null,
+            longitude: null
+        });
+        setLocationQuery('');
+        setErrors({});
     };
 
     const handleSave = () => {
@@ -131,54 +183,122 @@ const EditDialog: React.FC<EditDialogProps> = ({ open, media, onClose, onSave })
                         ))}
                     </TextField>
 
-                    <TextField
+                    {/* Campo de búsqueda de ubicaciones */}
+                    <Autocomplete
                         fullWidth
-                        label="Latitud"
-                        type="number"
-                        value={editedMedia.latitude || ''}
-                        onChange={(e) => {
-                            const value = e.target.value === '' ? null : parseFloat(e.target.value);
-                            setEditedMedia({
-                                ...editedMedia,
-                                latitude: value
-                            });
-                            setErrors({...errors, latitude: undefined});
-                        }}
-                        error={Boolean(errors.latitude)}
-                        helperText={errors.latitude}
-                        sx={{ mb: 2 }}
-                        InputProps={{
-                            inputProps: { 
-                                min: -90, 
-                                max: 90,
-                                step: "any"
+                        options={locationOptions}
+                        loading={isLoadingLocations}
+                        getOptionLabel={(option) => option.displayName || ''}
+                        filterOptions={(x) => x} // No filtramos, ya que la API ya nos da los resultados filtrados
+                        onInputChange={(_, value) => setLocationQuery(value)}
+                        onChange={(_, option) => {
+                            if (option) {
+                                setEditedMedia({
+                                    ...editedMedia,
+                                    latitude: option.latitude,
+                                    longitude: option.longitude
+                                });
+                                setErrors({});
                             }
                         }}
+                        noOptionsText="Sin resultados"
+                        loadingText="Buscando..."
+                        renderInput={(params) => (
+                            <TextField 
+                                {...params} 
+                                label="Buscar ubicación por nombre"
+                                placeholder="Ej: Madrid, España"
+                                helperText="Escribe nombre de ciudad, país o ubicación"
+                                sx={{ mb: 3 }}
+                                InputProps={{
+                                    ...params.InputProps,
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <LocationOnIcon color="action" />
+                                        </InputAdornment>
+                                    ),
+                                    endAdornment: (
+                                        <>
+                                            {isLoadingLocations ? <CircularProgress color="inherit" size={20} /> : null}
+                                            {params.InputProps.endAdornment}
+                                        </>
+                                    ),
+                                }}
+                            />
+                        )}
+                        renderOption={(props, option) => (
+                            <Box component="li" {...props}>
+                                <LocationOnIcon sx={{ mr: 1 }} />
+                                <Typography variant="body2" noWrap>
+                                    {option.displayName}
+                                </Typography>
+                            </Box>
+                        )}
                     />
 
-                    <TextField
-                        fullWidth
-                        label="Longitud"
-                        type="number"
-                        value={editedMedia.longitude || ''}
-                        onChange={(e) => {
-                            const value = e.target.value === '' ? null : parseFloat(e.target.value);
-                            setEditedMedia({
-                                ...editedMedia,
-                                longitude: value
-                            });
-                            setErrors({...errors, longitude: undefined});
-                        }}
-                        error={Boolean(errors.longitude)}
-                        helperText={errors.longitude}
-                        InputProps={{
-                            inputProps: { 
-                                min: -180, 
-                                max: 180,
-                                step: "any"
-                            }
-                        }}
-                    />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="body2" color="textSecondary">
+                            Coordenadas GPS
+                        </Typography>
+                        <Button 
+                            size="small" 
+                            onClick={handleClearCoordinates}
+                            variant="text"
+                            sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                        >
+                            Limpiar coordenadas
+                        </Button>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="Latitud"
+                            type="number"
+                            value={editedMedia.latitude || ''}
+                            onChange={(e) => {
+                                const value = e.target.value === '' ? null : parseFloat(e.target.value);
+                                setEditedMedia({
+                                    ...editedMedia,
+                                    latitude: value
+                                });
+                                setErrors({...errors, latitude: undefined});
+                            }}
+                            error={Boolean(errors.latitude)}
+                            helperText={errors.latitude}
+                            InputProps={{
+                                inputProps: { 
+                                    min: -90, 
+                                    max: 90,
+                                    step: "any"
+                                }
+                            }}
+                        />
+
+                        <TextField
+                            fullWidth
+                            label="Longitud"
+                            type="number"
+                            value={editedMedia.longitude || ''}
+                            onChange={(e) => {
+                                const value = e.target.value === '' ? null : parseFloat(e.target.value);
+                                setEditedMedia({
+                                    ...editedMedia,
+                                    longitude: value
+                                });
+                                setErrors({...errors, longitude: undefined});
+                            }}
+                            error={Boolean(errors.longitude)}
+                            helperText={errors.longitude}
+                            InputProps={{
+                                inputProps: { 
+                                    min: -180, 
+                                    max: 180,
+                                    step: "any"
+                                }
+                            }}
+                        />
+                    </Box>
                 </Box>
             </DialogContent>
             <DialogActions>
@@ -206,6 +326,8 @@ const MediaTable: React.FC<MediaTableProps> = ({
     isLoading
 }) => {
     const [editingMedia, setEditingMedia] = React.useState<Media | null>(null);
+    const [searchQuery, setSearchQuery] = React.useState<string>('');
+    const [filteredMedia, setFilteredMedia] = React.useState<Media[]>(media);
 
     const formatDate = (dateString: string | null | undefined) => {
         if (!dateString) return 'Fecha desconocida';
@@ -239,6 +361,27 @@ const MediaTable: React.FC<MediaTableProps> = ({
         setEditingMedia(null);
     };
 
+    const handleSearch = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const value = event.target.value;
+        setSearchQuery(value);
+
+        if (value.trim() === '') {
+            setFilteredMedia(media);
+            return;
+        }
+
+        // Filtrar los medios basados en la búsqueda de texto
+        const filtered = media.filter(item => 
+            item.filename.toLowerCase().includes(value.toLowerCase()) ||
+            (item.event_type && item.event_type.toLowerCase().includes(value.toLowerCase()))
+        );
+        setFilteredMedia(filtered);
+    };
+
+    React.useEffect(() => {
+        setFilteredMedia(media);
+    }, [media]);
+
     if (isLoading && media.length === 0) {
         return <LoadingSkeleton count={5} variant="table" />;
     }
@@ -262,6 +405,20 @@ const MediaTable: React.FC<MediaTableProps> = ({
 
     return (
         <>
+            <TextField
+                fullWidth
+                label="Buscar ubicación"
+                value={searchQuery}
+                onChange={handleSearch}
+                sx={{ mb: 2 }}
+                InputProps={{
+                    startAdornment: (
+                        <InputAdornment position="start">
+                            <SearchIcon />
+                        </InputAdornment>
+                    ),
+                }}
+            />
             <TableContainer component={Paper}>
                 {isLoading && media.length > 0 && (
                     <Box sx={{ 
@@ -296,7 +453,7 @@ const MediaTable: React.FC<MediaTableProps> = ({
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {media.map((item) => (
+                        {filteredMedia.map((item) => (
                             <TableRow key={item.id}>
                                 <TableCell>
                                     <img 
