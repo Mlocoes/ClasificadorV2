@@ -15,7 +15,7 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tan
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // Importar componentes
-import { Header, UploadArea, MediaGrid, MediaTable } from './components';
+import { Header, UploadArea, MediaGrid, MediaTable, AIModelSelector } from './components';
 import { mediaService } from './services';
 import type { Media, MediaUpdate } from './services/mediaService';
 
@@ -237,6 +237,13 @@ function AppContent() {
                 <UploadArea 
                     onUpload={handleUpload}
                     isLoading={isUploading}
+                />
+                
+                {/* AI Model Selector */}
+                <AIModelSelector 
+                    onModelChange={(model) => {
+                        showNotification(`Modelo cambiado a ${model === 'clip' ? 'CLIP' : 'OpenCV+DNN'}`, 'success');
+                    }}
                 />
 
                 {/* View Mode Toggle and Last Update */}

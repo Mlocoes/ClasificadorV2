@@ -4,12 +4,13 @@ Sistema inteligente para organización y clasificación de medios (imágenes y v
 
 ## 🚀 Características Principales
 
-- **Clasificación automática**: Utiliza inteligencia artificial (CLIP) para clasificar eventos
+- **Clasificación automática**: Utiliza inteligencia artificial con selector de modelos (CLIP/OpenCV+DNN) para clasificar eventos
 - **Procesamiento completo**: Extracción de metadatos, generación de miniaturas, detección de ubicación
 - **Archivos procesados**: Crea copias con nombre estandarizado basado en fecha y evento
 - **Soporte amplio**: Formatos JPEG, PNG, HEIC, MP4, MOV y más
 - **Interfaz moderna**: Diseño responsivo, vista grid/lista, actualización en tiempo real
 - **Organización inteligente**: Búsqueda y filtrado por evento, nombre o ubicación
+- **Optimización de recursos**: Selección entre modelos de IA según necesidades de precisión o rendimiento
 
 ## 📋 Requisitos del Sistema
 
@@ -127,4 +128,4 @@ YYYY-MM-DD-tipo-de-evento-2.extensión
 
 Los archivos procesados se almacenan en el directorio `/storage/processed/` y facilitan la organización y búsqueda posterior.
 
-Para más información, consulte la [Documentación de Archivos Procesados](Docs/FUNCIONALIDAD_ARCHIVOS_PROCESADOS.md).
+Para más información, consulte la [Documentación de Archivos Procesados](Docs/FUNCIONALIDAD_ARCHIVOS_PROCESADOS.md) y [Documentación del Selector de Modelos de IA](Docs/DOCUMENTACION_SELECTOR_MODELOS_IA.md).

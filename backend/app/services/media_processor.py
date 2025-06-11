@@ -7,6 +7,7 @@ import exifread
 from datetime import datetime
 import torch
 import shutil
+import numpy as np
 from app.core.config import settings
 
 # Importación condicional de pyheif
@@ -26,6 +27,8 @@ class MediaProcessor:
     def __init__(self):
         self.clip_model = None
         self.clip_processor = None
+        self.opencv_dnn_model = None
+        self.opencv_classes = None
 
     def create_thumbnail(self, file_path: str, mime_type: str) -> Optional[str]:
         try:
@@ -208,6 +211,92 @@ class MediaProcessor:
             self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
             self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
+    def _load_opencv_dnn_model(self):
+        if self.opencv_dnn_model is None:
+            try:
+                # Rutas para el modelo YOLO
+                model_dir = settings.STORAGE_DIR / "models" / "opencv_dnn"
+                model_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Rutas de los archivos del modelo YOLO
+                config_path = model_dir / "yolov4.cfg"
+                weights_path = model_dir / "yolov4.weights"
+                classes_path = model_dir / "coco.names"
+                
+                # Si los archivos no existen, los descargamos
+                if not config_path.exists() or not weights_path.exists() or not classes_path.exists():
+                    print("Descargando modelo YOLO para OpenCV DNN...")
+                    self._download_opencv_dnn_model(config_path, weights_path, classes_path)
+                
+                # Cargar el modelo YOLO
+                print(f"Cargando modelo YOLO desde {weights_path}...")
+                self.opencv_dnn_model = cv2.dnn.readNetFromDarknet(str(config_path), str(weights_path))
+                
+                # Seleccionar backend preferido para mejor rendimiento
+                self.opencv_dnn_model.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                self.opencv_dnn_model.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+                
+                # Verificar si el modelo se cargó correctamente
+                if self.opencv_dnn_model.empty():
+                    raise ValueError("No se pudo cargar el modelo YOLO")
+                    
+                print("Modelo YOLO cargado exitosamente")
+                
+                # Cargar las clases de COCO
+                print(f"Cargando clases desde {classes_path}...")
+                with open(classes_path, 'r') as f:
+                    self.opencv_classes = [line.strip() for line in f.readlines()]
+                print(f"Cargadas {len(self.opencv_classes)} clases")
+                
+                # Agregar la configuración para las capas de salida de YOLO
+                self.yolo_output_layers = self.opencv_dnn_model.getUnconnectedOutLayersNames()
+                
+            except Exception as e:
+                print(f"Error al cargar el modelo OpenCV DNN: {e}")
+                # Inicializar con valores vacíos en caso de error
+                self.opencv_dnn_model = None
+                self.opencv_classes = []
+                self.yolo_output_layers = []
+                raise
+    
+    def _download_opencv_dnn_model(self, config_path, weights_path, classes_path):
+        """Descarga los archivos necesarios para el modelo YOLO"""
+        import requests
+        import os
+        
+        # URLs de los archivos del modelo YOLO
+        config_url = "https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4.cfg"
+        weights_url = "https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v3_optimal/yolov4.weights"
+        classes_url = "https://raw.githubusercontent.com/AlexeyAB/darknet/master/data/coco.names"
+        
+        print(f"Descargando archivo de configuración desde {config_url}")
+        try:
+            # Descargar el archivo de configuración
+            with open(config_path, 'wb') as f:
+                response = requests.get(config_url, timeout=30)
+                response.raise_for_status()
+                f.write(response.content)
+            print(f"Archivo de configuración guardado en {config_path}")
+            
+            # Descargar el archivo de pesos (archivo grande, puede tardar)
+            print(f"Descargando pesos del modelo desde {weights_url} (esto puede tardar varios minutos)...")
+            with open(weights_path, 'wb') as f:
+                response = requests.get(weights_url, timeout=300)  # tiempo de espera más largo para archivos grandes
+                response.raise_for_status()
+                f.write(response.content)
+            print(f"Archivo de pesos guardado en {weights_path}, tamaño: {os.path.getsize(weights_path)/1024/1024:.2f} MB")
+            
+            # Descargar el archivo de clases
+            print(f"Descargando archivo de clases desde {classes_url}")
+            with open(classes_path, 'wb') as f:
+                response = requests.get(classes_url, timeout=30)
+                response.raise_for_status()
+                f.write(response.content)
+            print(f"Archivo de clases guardado en {classes_path}")
+        except Exception as e:
+            print(f"Error al descargar archivos del modelo: {e}")
+            raise
+    
     def extract_metadata(self, file_path: str, mime_type: str) -> dict:
         metadata = {}
         
@@ -283,6 +372,22 @@ class MediaProcessor:
         return d + (m / 60.0) + (s / 3600.0)
 
     def predict_event(self, file_path: str) -> Tuple[str, float]:
+        """
+        Predice el tipo de evento en una imagen usando el modelo seleccionado.
+        """
+        try:
+            # Usar el modelo seleccionado en la configuración
+            if settings.AI_MODEL == "opencv_dnn":
+                return self._predict_event_opencv_dnn(file_path)
+            elif settings.AI_MODEL == "opencv_yolo":
+                return self._predict_event_opencv_dnn(file_path)  # Usamos el mismo método ya que ahora carga YOLO
+            else:  # Modelo por defecto: CLIP
+                return self._predict_event_clip(file_path)
+        except Exception as e:
+            print(f"Error al predecir evento: {e}")
+            return "unknown", 0.0
+    
+    def _predict_event_clip(self, file_path: str) -> Tuple[str, float]:
         """
         Predice el tipo de evento en una imagen usando CLIP.
         """
@@ -361,7 +466,206 @@ class MediaProcessor:
             return event_type, confidence
             
         except Exception as e:
-            print(f"Error predicting event: {e}")
+            print(f"Error predicting event with CLIP: {e}")
+            return "unknown", 0.0
+            
+    def _predict_event_opencv_dnn(self, file_path: str) -> Tuple[str, float]:
+        """
+        Predice el tipo de evento en una imagen usando OpenCV DNN con YOLO.
+        """
+        try:
+            self._load_opencv_dnn_model()
+            
+            # Cargar la imagen
+            img = cv2.imread(file_path)
+            if img is None:
+                raise ValueError(f"No se pudo cargar la imagen desde {file_path}")
+            
+            # Obtener las dimensiones de la imagen
+            height, width = img.shape[:2]
+            
+            # Preprocesar la imagen para YOLO (transformar a blob)
+            # YOLO espera un blob 416x416 con valores entre [0,1] y canales BGR
+            blob = cv2.dnn.blobFromImage(
+                img, 
+                1/255.0,  # Factor de escala para normalizar píxeles a [0,1]
+                (416, 416),  # Tamaño de entrada para YOLO
+                swapRB=False,  # OpenCV ya usa BGR, YOLO también espera BGR
+                crop=False
+            )
+            
+            # Pasar la imagen por la red
+            self.opencv_dnn_model.setInput(blob)
+            
+            # Obtener las predicciones de todas las capas de salida de YOLO
+            # Esto contendrá información sobre los objetos detectados
+            outputs = self.opencv_dnn_model.forward(self.yolo_output_layers)
+            
+            # Listas para almacenar los resultados
+            detected_objects = []
+            confidences = []
+            class_ids = []
+            
+            # Umbral de confianza para las detecciones
+            conf_threshold = 0.5
+            
+            # Procesar cada salida
+            for output in outputs:
+                # Cada fila es una detección
+                for detection in output:
+                    # Los primeros 4 valores son x, y, w, h (centro y dimensiones del bounding box)
+                    # Resto de valores son las confianzas para cada clase
+                    scores = detection[5:]
+                    class_id = np.argmax(scores)
+                    confidence = scores[class_id]
+                    
+                    if confidence > conf_threshold:
+                        detected_objects.append(self.opencv_classes[class_id])
+                        confidences.append(float(confidence))
+                        class_ids.append(class_id)
+            
+            # Mostrar los objetos detectados con su confianza
+            print(f"Objetos detectados ({len(detected_objects)}):")
+            for i, obj in enumerate(detected_objects):
+                print(f"  - {obj}: {confidences[i]:.4f}")
+            
+            # Mapeo mejorado de objetos detectados por YOLO a eventos
+            event_categories = {
+                # Categorías deportivas
+                "evento deportivo": {
+                    "objects": ["sports ball", "baseball bat", "baseball glove", "tennis racket", 
+                               "soccer ball", "football", "basketball", "baseball", "frisbee", 
+                               "skis", "snowboard", "sports ball", "kite", "baseball bat", 
+                               "baseball glove", "skateboard", "surfboard", "tennis racket"],
+                    "weight": 1.2
+                },
+                
+                # Categorías de conferencias/eventos educativos
+                "conferencia": {
+                    "objects": ["laptop", "tv", "book", "cell phone", "keyboard", "mouse",
+                               "microphone", "projector", "presentation", "whiteboard"],
+                    "weight": 1.0
+                },
+                
+                # Celebraciones y fiestas
+                "fiesta": {
+                    "objects": ["wine glass", "cup", "cake", "bottle", "balloon",
+                               "wine glass", "fork", "knife", "spoon", "bowl", "chair"],
+                    "weight": 1.1
+                },
+                
+                # Conciertos y eventos musicales
+                "concierto": {
+                    "objects": ["microphone", "chair", "person", "cell phone", "tv", "speaker"],
+                    "weight": 1.15
+                },
+                
+                # Bodas y ceremonias matrimoniales
+                "boda": {
+                    "objects": ["person", "tie", "dress", "suit", "cake", "wine glass", 
+                               "chair", "dining table", "flower", "candle"],
+                    "weight": 1.3
+                },
+                
+                # Graduaciones
+                "graduación": {
+                    "objects": ["person", "book", "chair", "tie", "gown", "hat"],
+                    "weight": 1.25
+                },
+                
+                # Protestas y manifestaciones
+                "protesta": {
+                    "objects": ["person", "sign", "banner", "flag", "backpack"],
+                    "weight": 1.0
+                },
+                
+                # Ceremonias religiosas
+                "ceremonia religiosa": {
+                    "objects": ["person", "book", "chair", "vase", "candle"],
+                    "weight": 1.0
+                },
+                
+                # Desfiles y festivales
+                "desfile o festival": {
+                    "objects": ["person", "flag", "umbrella", "balloon", "backpack", "handbag"],
+                    "weight": 1.0
+                },
+                
+                # Eventos gastronómicos
+                "evento gastronómico": {
+                    "objects": ["dining table", "bottle", "wine glass", "cup", "fork", "knife", 
+                               "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", 
+                               "carrot", "hot dog", "pizza", "donut", "cake", "chair", "food"],
+                    "weight": 1.0
+                },
+                
+                # Actividades al aire libre
+                "actividad al aire libre": {
+                    "objects": ["bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", 
+                               "boat", "bird", "cat", "dog", "horse", "sheep", "cow", "backpack", 
+                               "umbrella", "handbag", "suitcase", "frisbee", "skis", "snowboard",
+                               "kite", "skateboard", "surfboard", "tennis racket", "bottle", "tree", 
+                               "mountain", "beach", "lake", "river"],
+                    "weight": 1.0
+                },
+                
+                # Reuniones familiares
+                "reunión familiar": {
+                    "objects": ["person", "chair", "couch", "potted plant", "dining table", "tv", 
+                               "laptop", "cell phone", "book", "clock", "vase"],
+                    "weight": 1.0
+                },
+                
+                # Grupo general de personas
+                "evento social": {
+                    "objects": ["person"],
+                    "weight": 0.8  # Menor peso ya que personas aparecen en muchos eventos
+                }
+            }
+            
+            # Sistema de puntuación para determinar el evento
+            event_scores = {event: 0.0 for event in event_categories.keys()}
+            
+            # Analizar cada objeto detectado y acumular puntuaciones
+            for obj, confidence in zip(detected_objects, confidences):
+                # Comprobar cada categoría de evento
+                for event, data in event_categories.items():
+                    if obj in data["objects"]:
+                        # Sumar puntuación ponderada si hay coincidencia
+                        event_scores[event] += confidence * data["weight"]
+                        print(f"  - Coincidencia '{obj}' para evento '{event}', score+={confidence * data['weight']:.4f}")
+            
+            # Factor de peso para eventos con múltiples objetos relevantes detectados
+            # Esto favorece escenas con varios objetos de la misma categoría
+            for event in event_scores:
+                # Contar objetos únicos detectados para este evento
+                unique_objects = set()
+                for obj in detected_objects:
+                    if obj in event_categories[event]["objects"]:
+                        unique_objects.add(obj)
+                
+                # Aplicar multiplicador basado en la cantidad de objetos únicos
+                if len(unique_objects) > 1:
+                    multiplier = 1.0 + (min(len(unique_objects), 5) - 1) * 0.15  # Cap at +60% boost
+                    event_scores[event] *= multiplier
+                    print(f"  - Bonus para '{event}' por {len(unique_objects)} objetos únicos: x{multiplier:.2f}")
+            
+            # Encontrar el evento con mayor puntuación
+            best_event = max(event_scores.items(), key=lambda x: x[1]) if event_scores else ("unknown", 0.0)
+            event_type, score = best_event
+            
+            # Si no hay suficiente puntuación, es un evento desconocido
+            if score <= 0.3:
+                print("Puntuación baja, clasificando como evento desconocido")
+                return "evento desconocido", max(confidences) if confidences else 0.0
+                
+            print(f"Evento clasificado como '{event_type}' con puntuación {score:.4f}")
+            return event_type, score
+            
+        except Exception as e:
+            print(f"Error predicting event with OpenCV DNN YOLO: {e}")
+            import traceback
+            traceback.print_exc()
             return "unknown", 0.0
     
     def create_processed_copy(self, original_file_path: str, creation_date: Optional[datetime] = None, event_type: Optional[str] = None) -> Optional[str]:

@@ -8,8 +8,12 @@ import sys
 import sqlite3
 from pathlib import Path
 
+# Determinar la ruta base del proyecto
+script_dir = Path(__file__).parent.absolute()
+project_dir = script_dir.parent
+
 # Obtener la ruta de la base de datos
-DB_PATH = os.environ.get('DB_PATH', '/app/storage/db.sqlite3')
+DB_PATH = os.environ.get('DB_PATH', str(project_dir / 'storage' / 'db.sqlite3'))
 
 def main():
     print(f"Intentando actualizar la base de datos en: {DB_PATH}")

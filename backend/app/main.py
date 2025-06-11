@@ -7,7 +7,14 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1 import media
+from app.api.v1 import router as api_router
+
+# Cargar configuración desde archivo si existe
+try:
+    settings.load_config_from_file()
+    print(f"Configuración cargada. Modelo de IA activo: {settings.AI_MODEL}")
+except Exception as e:
+    print(f"Error al cargar la configuración: {e}")
 
 # Crear tablas de la base de datos
 Base.metadata.create_all(bind=engine)
@@ -47,7 +54,7 @@ app.mount("/thumbnails", StaticFiles(directory=str(settings.THUMBNAILS_DIR)), na
 app.mount("/processed", StaticFiles(directory=str(settings.PROCESSED_DIR)), name="processed")
 
 # Registrar rutas
-app.include_router(media.router, prefix=f"{settings.API_V1_STR}/media", tags=["media"])
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():
