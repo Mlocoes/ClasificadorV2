@@ -229,6 +229,7 @@ function AppContent() {
             <Header 
                 onSearch={handleSearch}
                 searchValue={searchQuery}
+                onRefreshMedia={refetch}
             />
 
             {/* Main Content */}

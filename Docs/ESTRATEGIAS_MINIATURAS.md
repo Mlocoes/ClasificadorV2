@@ -39,7 +39,7 @@ Este documento describe las diferentes estrategias disponibles para el almacenam
 
 **Descripción:** Similar a `dedicated_dir`, usa un directorio en la raíz del proyecto.
 
-**Ubicación:** `/app/storage/thumbnails/` (configuración actual)
+**Ubicación:** `/app/storage/thumbnails/` (configuración anterior)
 
 **Ventajas y desventajas:** Similares a la estrategia `dedicated_dir`.
 

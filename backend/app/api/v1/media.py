@@ -133,16 +133,8 @@ async def upload_media(
             db_media.event_confidence = confidence
             print(f"DEBUG: Evento predicho - {event_type} ({confidence})")
         
-        # Crear copia del archivo con formato fecha-evento en directorio processed
-        print(f"DEBUG: Creando copia procesada del archivo con formato fecha-evento")
-        processed_path = media_processor.create_processed_copy(
-            str(file_path), 
-            db_media.creation_date, 
-            db_media.event_type
-        )
-        if processed_path:
-            print(f"DEBUG: Copia procesada creada exitosamente en: {processed_path}")
-            db_media.processed_file_path = processed_path
+        # Ya no se crea automáticamente la copia procesada del archivo
+        # Esto ahora se hará a través del botón "Generar archivos" en la interfaz
         
         print(f"DEBUG: Guardando cambios en BD")
         db.commit()
@@ -236,26 +228,8 @@ def update_media(
     # Actualizar datos
     updated_media = media_crud.update_media(db, media_id, media_update)
     
-    # Si se actualizó el tipo de evento, regenerar el archivo procesado
-    if media_update.event_type is not None:
-        print(f"DEBUG: Se actualizó el evento a {media_update.event_type}. Regenerando archivo procesado...")
-        
-        # Construir ruta absoluta al archivo original
-        original_file_path = settings.STORAGE_DIR / db_media.file_path.lstrip('/')
-        
-        # Si existe el archivo, crear una nueva versión procesada
-        if original_file_path.exists():
-            processed_path = media_processor.create_processed_copy(
-                str(original_file_path),
-                db_media.creation_date, 
-                updated_media.event_type
-            )
-            
-            if processed_path:
-                print(f"DEBUG: Nueva versión del archivo procesado creada en: {processed_path}")
-                updated_media.processed_file_path = processed_path
-                db.commit()
-                db.refresh(updated_media)
+    # Ya no regeneramos automáticamente el archivo procesado al actualizar el tipo de evento
+    # Esto ahora se hará únicamente a través del botón "Generar archivos" en la interfaz
     
     return updated_media
 

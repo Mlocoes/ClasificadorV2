@@ -141,6 +141,7 @@ def fix_storage_paths(config_module):
     print(f"  UPLOADS_DIR: {settings.UPLOADS_DIR}")
     print(f"  THUMBNAILS_DIR: {settings.THUMBNAILS_DIR}")
     print(f"  PROCESSED_DIR: {settings.PROCESSED_DIR}")
+    print(f"  CONFIG_DIR: {settings.CONFIG_DIR if hasattr(settings, 'CONFIG_DIR') else 'No configurado'}")
     print(f"  SQLITE_URL: {settings.SQLITE_URL}")
     
     # Verificar si las rutas ya están correctas
@@ -156,6 +157,9 @@ def fix_storage_paths(config_module):
     # Establecer el directorio de storage relativo al proyecto
     settings.STORAGE_DIR = project_dir / "storage"
     
+    # Establecer el directorio de configuración
+    settings.CONFIG_DIR = project_dir / "config"
+    
     # Actualizar directorios dependientes
     settings.UPLOADS_DIR = settings.STORAGE_DIR / "uploads"
     settings.THUMBNAILS_DIR = settings.STORAGE_DIR / "thumbnails"
@@ -170,6 +174,7 @@ def fix_storage_paths(config_module):
     print(f"  UPLOADS_DIR: {settings.UPLOADS_DIR}")
     print(f"  THUMBNAILS_DIR: {settings.THUMBNAILS_DIR}")
     print(f"  PROCESSED_DIR: {settings.PROCESSED_DIR}")
+    print(f"  CONFIG_DIR: {settings.CONFIG_DIR}")
     print(f"  SQLITE_URL: {settings.SQLITE_URL}")
     
     return True
@@ -198,7 +203,9 @@ def ensure_directories(config_module):
         settings.UPLOADS_DIR,
         settings.THUMBNAILS_DIR,
         settings.PROCESSED_DIR,
-        settings.STORAGE_DIR / "models" / "opencv_dnn"
+        settings.CONFIG_DIR,
+        Path(settings.BASE_DIR) / "cache" / "models--opencv--dnn",
+        Path(settings.BASE_DIR) / "cache" / "models--openai--clip-vit-base-patch32"
     ]
     
     all_ok = True

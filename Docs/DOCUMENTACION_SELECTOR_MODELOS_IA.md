@@ -122,10 +122,10 @@ Si experimenta problemas con alguno de los modelos:
    **Solución**: Ejecutar manualmente el script `test_ai_models.py` para forzar la descarga
 
 3. **Problema**: El modelo OpenCV+YOLO muestra un error al cargar los pesos
-   **Solución**: Verificar que el archivo de pesos se descargó completamente (~245MB). Eliminar archivos en `/app/storage/models/opencv_dnn` y reintentar la descarga.
+   **Solución**: Verificar que el archivo de pesos se descargó completamente (~245MB). Eliminar archivos en `/app/cache/models--opencv--dnn` y reintentar la descarga.
 
 4. **Problema**: La descarga del modelo YOLO es muy lenta
-   **Solución**: El archivo de pesos es grande (~245MB). Espere a que se complete la descarga o descargue manualmente en `/app/storage/models/opencv_dnn/yolov4.weights`.
+   **Solución**: El archivo de pesos es grande (~245MB). Espere a que se complete la descarga o descargue manualmente en `/app/cache/models--opencv--dnn/yolov4.weights`.
 
 5. **Problema**: La selección del modelo no persiste tras reiniciar
-   **Solución**: Verificar permisos de escritura en `/app/storage/config`
+   **Solución**: Verificar permisos de escritura en `/app/config`

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
     AppBar, 
     Toolbar, 
@@ -6,10 +6,15 @@ import {
     InputBase, 
     Avatar, 
     Box,
-    Button
+    Button,
+    Snackbar,
+    Alert,
+    CircularProgress
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import mediaService from '../services/mediaService';
 
 // Logo mostrado en el encabezado
 const Logo = () => (
@@ -33,9 +38,50 @@ const Logo = () => (
 interface HeaderProps {
     onSearch: (query: string) => void;
     searchValue: string;
+    onRefreshMedia?: () => void; // Callback para refrescar la lista de medios
 }
 
-const Header: React.FC<HeaderProps> = ({ onSearch, searchValue }) => {
+const Header: React.FC<HeaderProps> = ({ onSearch, searchValue, onRefreshMedia }) => {
+    const [isGeneratingFiles, setIsGeneratingFiles] = useState(false);
+    const [notification, setNotification] = useState<{
+        show: boolean;
+        message: string;
+        type: 'success' | 'error' | 'info';
+    }>({ show: false, message: '', type: 'info' });
+    
+    const handleGenerateFiles = async () => {
+        try {
+            setIsGeneratingFiles(true);
+            setNotification({ show: true, message: 'Generando archivos procesados...', type: 'info' });
+            
+            const result = await mediaService.regenerateProcessedFiles();
+            
+            setNotification({ 
+                show: true, 
+                message: `Proceso completado: ${result.success_count} archivos procesados, ${result.failed_count} fallidos.`, 
+                type: 'success' 
+            });
+            
+            // Si se proporciona la función de actualización, llamarla
+            if (onRefreshMedia) {
+                onRefreshMedia();
+            }
+            
+        } catch (error) {
+            console.error('Error regenerando archivos:', error);
+            setNotification({ 
+                show: true, 
+                message: `Error al generar archivos: ${error instanceof Error ? error.message : 'Error desconocido'}`, 
+                type: 'error' 
+            });
+        } finally {
+            setIsGeneratingFiles(false);
+        }
+    };
+    
+    const handleCloseNotification = () => {
+        setNotification(prev => ({ ...prev, show: false }));
+    };
     return (
         <AppBar position="static" color="default" elevation={0} sx={{ 
             borderBottom: '1px solid #ededed',
@@ -160,11 +206,49 @@ const Header: React.FC<HeaderProps> = ({ onSearch, searchValue }) => {
                         Subir Archivos
                     </Button>
 
+                    <Button
+                        variant="outlined"
+                        startIcon={isGeneratingFiles ? <CircularProgress size={16} color="inherit" /> : <AutorenewIcon />}
+                        disabled={isGeneratingFiles}
+                        onClick={handleGenerateFiles}
+                        sx={{
+                            color: '#141414',
+                            borderColor: '#d9d9d9',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            borderRadius: '6px',
+                            px: '20px',
+                            py: '10px',
+                            '&:hover': {
+                                borderColor: '#141414',
+                                backgroundColor: '#f5f5f5',
+                            }
+                        }}
+                    >
+                        Generar Archivos
+                    </Button>
+
                     <Avatar sx={{ width: 32, height: 32, bgcolor: '#141414', fontSize: '14px' }}>
                         U
                     </Avatar>
                 </Box>
             </Toolbar>
+            
+            <Snackbar 
+                open={notification.show} 
+                autoHideDuration={6000} 
+                onClose={handleCloseNotification}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert 
+                    onClose={handleCloseNotification} 
+                    severity={notification.type} 
+                    sx={{ width: '100%' }}
+                >
+                    {notification.message}
+                </Alert>
+            </Snackbar>
         </AppBar>
     );
 };

@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     UPLOADS_DIR: Path = STORAGE_DIR / "uploads"
     THUMBNAILS_DIR: Path = STORAGE_DIR / "thumbnails"
     PROCESSED_DIR: Path = STORAGE_DIR / "processed"
+    CONFIG_DIR: Path = Path(BASE_DIR) / "config"
+    LOG_DIR: Path = Path(BASE_DIR) / "logs"
     
     # Base de datos
     SQLITE_URL: str = f"sqlite:///{STORAGE_DIR}/db.sqlite3"
+    
+    # Configuración de logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "False").lower() in ("true", "1", "yes")
     
     # Configuración CORS
     BACKEND_CORS_ORIGINS: List[str] = [
@@ -58,7 +64,7 @@ class Settings(BaseSettings):
         """
         Guarda la configuración actual en un archivo JSON para persistencia.
         """
-        config_dir = self.STORAGE_DIR / "config"
+        config_dir = self.CONFIG_DIR
         config_dir.mkdir(exist_ok=True)
         config_path = config_dir / "app_config.json"
         
@@ -83,7 +89,7 @@ class Settings(BaseSettings):
         """
         Carga la configuración desde un archivo JSON si existe.
         """
-        config_path = self.STORAGE_DIR / "config" / "app_config.json"
+        config_path = self.CONFIG_DIR / "app_config.json"
         
         if not os.path.exists(config_path):
             print(f"No existe archivo de configuración en {config_path}")

@@ -109,6 +109,16 @@ const mediaService = {
             throw error;
         }
     },
+
+    async regenerateProcessedFiles(): Promise<{ success_count: number, failed_count: number }> {
+        try {
+            const response = await axios.post(`${API_URL}/media/regenerate-processed-files/`);
+            return response.data;
+        } catch (error) {
+            handleError(error);
+            throw error;
+        }
+    },
 };
 
 // Función para actualizar un medio

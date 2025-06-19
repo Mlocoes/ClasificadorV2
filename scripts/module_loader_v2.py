@@ -21,6 +21,10 @@ app_config = None
 app_media_processor = None
 # pylint: enable=invalid-name
 
+# Para el linter de VS Code - esto nunca se ejecuta realmente
+if False:  # Esta condición siempre es falsa
+    from stubs import settings, MediaProcessor
+
 def setup_paths():
     """
     Configura las rutas necesarias para importar módulos de la aplicación.
