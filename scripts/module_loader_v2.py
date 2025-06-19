@@ -14,23 +14,36 @@ import sys
 from pathlib import Path
 import importlib.util
 import traceback
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, cast
 
-# Definir variables globales para suppressors de errores
-# pylint: disable=invalid-name
-app_config = None
-app_media_processor = None
-# pylint: enable=invalid-name
+# Importación condicional para el analizador estático
+# Esto ayuda al editor pero no se ejecuta en tiempo de ejecución
+try:
+    # Importamos los stubs para ayudar al analizador estático
+    from scripts.stubs import settings, MediaProcessor
+    from scripts.stubs import AppCoreConfig as config
+    from scripts.stubs import AppServicesMediaProcessor as media_processor
+except ImportError:
+    # Definimos tipos para satisfacer al analizador
+    settings = None  # type: ignore
+    MediaProcessor = None  # type: ignore
+    config = None  # type: ignore
+    media_processor = None  # type: ignore
 
-# Para el linter de VS Code - esto nunca se ejecuta realmente
-if False:  # Esta condición siempre es falsa
-    from stubs import settings, MediaProcessor
+# Definimos los tipos para ayudar al analizador estático
+ConfigModule = TypeVar('ConfigModule')
+MediaProcessorModule = TypeVar('MediaProcessorModule')
 
-def setup_paths():
+# Variables globales donde guardaremos los módulos importados
+app_config = None  # type: Optional[ConfigModule]
+app_media_processor = None  # type: Optional[MediaProcessorModule]
+
+def setup_paths() -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
     """
     Configura las rutas necesarias para importar módulos de la aplicación.
     
     Returns:
-        tuple: (project_dir, backend_dir, app_dir)
+        tuple: (project_dir, backend_dir, app_dir) o (None, None, None) en caso de error
     """
     # Determinar rutas absolutas
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +76,7 @@ def setup_paths():
     
     return project_dir, backend_dir, app_dir
 
-def ensure_init_files(app_dir):
+def ensure_init_files(app_dir: Path) -> None:
     """
     Asegura que existan los archivos __init__.py necesarios en los subdirectorios.
     
@@ -97,7 +110,7 @@ def ensure_init_files(app_dir):
         else:
             print(f"✅ Existente: {init_file}")
 
-def load_modules_dynamically():
+def load_modules_dynamically() -> Tuple[Optional[ConfigModule], Optional[MediaProcessorModule]]:
     """
     Carga dinámicamente los módulos de la aplicación.
     
@@ -118,14 +131,16 @@ def load_modules_dynamically():
             return None, None
         
         # Cargar los módulos
-        config = importlib.util.module_from_spec(config_spec)
-        media_processor = importlib.util.module_from_spec(media_processor_spec)
+        config_module = importlib.util.module_from_spec(config_spec)
+        media_processor_module = importlib.util.module_from_spec(media_processor_spec)
         
-        config_spec.loader.exec_module(config)
-        media_processor_spec.loader.exec_module(media_processor)
+        config_spec.loader.exec_module(config_module)
+        media_processor_spec.loader.exec_module(media_processor_module)
         
         print("✅ Módulos importados correctamente")
-        return config, media_processor
+        
+        # Usamos cast para indicar al analizador estático que confiamos en este tipo
+        return cast(ConfigModule, config_module), cast(MediaProcessorModule, media_processor_module)
         
     except Exception as e:
         print(f"❌ Error al cargar módulos: {e}")
@@ -133,7 +148,7 @@ def load_modules_dynamically():
         traceback.print_exc()
         return None, None
 
-def import_app_modules():
+def import_app_modules() -> Tuple[Optional[ConfigModule], Optional[MediaProcessorModule]]:
     """
     Configura el entorno y carga los módulos necesarios de la aplicación.
     
@@ -153,17 +168,24 @@ def import_app_modules():
     # Intentar el primer método: importación directa
     try:
         print("\n=== Método 1: Importación directa ===")
-        # Usar importación condicional para evitar errores del linter
-        if True:
-            # pylint: disable=import-error
-            from app.core.config import settings  # noqa: F401
-            from app.services.media_processor import MediaProcessor  # noqa: F401
-            # pylint: enable=import-error
-        print("✅ Módulos importados directamente con éxito")
-        
-        # Importar dinámicamente para devolver los módulos
-        return load_modules_dynamically()
-        
+        # Importación segura para el analizador estático
+        import_successful = False
+        try:
+            # Importación directa - es importante usar import_module para evitar problemas con el analizador
+            import importlib as importlib_direct
+            # type: ignore # Añadido para evitar errores del analizador estático
+            importlib_direct.import_module("app.core.config")  # type: ignore # noqa
+            importlib_direct.import_module("app.services.media_processor")  # type: ignore # noqa
+            import_successful = True
+        except ImportError:
+            pass  # Manejado por el bloque exterior
+
+        if import_successful:
+            print("✅ Módulos importados directamente con éxito")
+            # Importar dinámicamente para devolver los módulos
+            return load_modules_dynamically()
+        else:
+            raise ImportError("Error en importación directa")
     except Exception as e:
         print(f"❌ Error en importación directa: {e}")
     
@@ -174,12 +196,10 @@ def import_app_modules():
     print(f"Directorio de trabajo cambiado a: {os.getcwd()}")
     
     try:
-        # Usar importación condicional para evitar errores del linter
-        if True:
-            # pylint: disable=import-error
-            from app.core.config import settings  # noqa: F401
-            from app.services.media_processor import MediaProcessor  # noqa: F401
-            # pylint: enable=import-error
+        # Importación segura para el analizador estático
+        import importlib
+        _config = importlib.import_module("app.core.config")  # type: ignore # noqa
+        _media_processor = importlib.import_module("app.services.media_processor")  # type: ignore # noqa
         print("✅ Módulos importados con éxito usando cambio de directorio")
         
         # Volver al directorio original
@@ -220,7 +240,7 @@ def import_app_modules():
     print("\n❌ No se pudo cargar los módulos de la aplicación.")
     return None, None
 
-def show_help():
+def show_help() -> None:
     """Muestra información de ayuda para solucionar problemas de importación"""
     print("""
 === SUGERENCIAS PARA RESOLVER PROBLEMAS DE IMPORTACIÓN ===

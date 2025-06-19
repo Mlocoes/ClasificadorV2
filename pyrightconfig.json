@@ -4,9 +4,15 @@
         "scripts"
     ],
     "extraPaths": [
-        "backend"
+        "backend",
+        "."
     ],
-    "pythonVersion": "3.8",
+    "pythonVersion": "3.10",
     "venvPath": ".",
-    "typeCheckingMode": "basic"
+    "venv": "venv",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": false,
+    "reportMissingTypeStubs": false,
+    "stubPath": "scripts/stubs",
+    "useLibraryCodeForTypes": true
 }

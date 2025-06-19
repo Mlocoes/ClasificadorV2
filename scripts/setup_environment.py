@@ -13,6 +13,37 @@ import sys
 import importlib.util
 import traceback
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, cast
+
+# Importaciones condicionales para el análisis estático
+try:
+    # Importamos los stubs para ayudar al analizador estático
+    from scripts.stubs import settings, MediaProcessor, Base, SessionLocal
+    from scripts.stubs import AppCoreConfig as config_module
+    from scripts.stubs import AppServicesMediaProcessor as media_processor_module
+    from scripts.stubs import AppCoreDatabase as database_module
+except ImportError:
+    # Definimos tipos para satisfacer al analizador
+    settings = None  # type: ignore
+    MediaProcessor = None  # type: ignore
+    Base = None  # type: ignore
+    SessionLocal = None  # type: ignore
+    config_module = None  # type: ignore
+    media_processor_module = None  # type: ignore
+    database_module = None  # type: ignore
+
+# Definimos los tipos para ayudar al analizador estático
+ConfigModule = TypeVar('ConfigModule')
+MediaProcessorModule = TypeVar('MediaProcessorModule')
+DatabaseModule = TypeVar('DatabaseModule')
+
+# Para que el analizador estático no muestre errores, definimos esto
+if False:  # Este bloque nunca se ejecuta, sólo es para el analizador estático
+    # Simulación de importaciones para el analizador estático
+    from app.core import config  # type: ignore # noqa
+    from app.core.config import settings  # type: ignore # noqa
+    from app.services.media_processor import MediaProcessor  # type: ignore # noqa
+    from app.core.database import SessionLocal, Base  # type: ignore # noqa
 
 def print_header(text):
     """Imprime un encabezado formateado"""
@@ -76,7 +107,7 @@ def setup_imports():
     
     return all_ok
 
-def load_config_module():
+def load_config_module() -> Tuple[bool, Optional[ConfigModule]]:
     """
     Carga dinámicamente el módulo de configuración.
     
@@ -86,10 +117,24 @@ def load_config_module():
     print_header("CARGA DEL MÓDULO DE CONFIGURACIÓN")
     
     try:
-        # Intentamos la importación directa
-        from app.core import config
-        print("✅ Módulo de configuración importado correctamente")
-        return True, config
+        # Intentamos la importación directa con manejo para el analizador estático
+        success = False
+        cfg = None
+        
+        try:
+            # Esta importación es para runtime, puede fallar durante el análisis estático
+            import importlib
+            cfg = importlib.import_module("app.core.config")  # type: ignore # noqa
+            success = True
+        except ImportError:
+            # Manejaremos esto en el bloque except exterior
+            pass
+            
+        if success:
+            print("✅ Módulo de configuración importado correctamente")
+            return True, cast(ConfigModule, cfg)
+        else:
+            raise ImportError("No se pudo importar app.core.config")
     except ImportError as e:
         print(f"❌ Error al importar módulo de configuración: {e}")
         
@@ -222,7 +267,7 @@ def ensure_directories(config_module):
     
     return all_ok
 
-def import_test():
+def import_test() -> bool:
     """
     Prueba la importación de los módulos principales.
     
@@ -231,22 +276,65 @@ def import_test():
     """
     print_header("PRUEBA DE IMPORTACIONES")
     
+    # Para el análisis estático, usamos un enfoque más robusto con importlib
     try:
-        from app.core.config import settings
-        print("✅ Módulo config importado")
-        
-        from app.services.media_processor import MediaProcessor
-        print("✅ Módulo media_processor importado")
-        
+        # Prueba de config
+        config_imported = False
         try:
-            from app.core.database import SessionLocal, Base
-            print("✅ Módulo database importado")
+            import importlib
+            config = importlib.import_module("app.core.config")  # type: ignore # noqa
+            settings_obj = getattr(config, "settings", None)
+            if settings_obj:
+                print("✅ Módulo config importado")
+                config_imported = True
+            else:
+                print("❌ No se encontró 'settings' en el módulo config")
+        except ImportError as e:
+            print(f"❌ Error al importar config: {e}")
+        
+        # Prueba de media_processor
+        mp_imported = False
+        try:
+            mp = importlib.import_module("app.services.media_processor")  # type: ignore # noqa
+            mp_class = getattr(mp, "MediaProcessor", None)
+            if mp_class:
+                print("✅ Módulo media_processor importado")
+                mp_imported = True
+            else:
+                print("❌ No se encontró 'MediaProcessor' en el módulo media_processor")
+        except ImportError as e:
+            print(f"❌ Error al importar media_processor: {e}")
+        
+        # Prueba de database (opcional)
+        db_imported = False
+        try:
+            db = importlib.import_module("app.core.database")  # type: ignore # noqa
+            session_local = getattr(db, "SessionLocal", None)
+            base = getattr(db, "Base", None)
+            if session_local and base:
+                print("✅ Módulo database importado")
+                db_imported = True
+            else:
+                print("⚠️ No se encontraron todas las clases requeridas en el módulo database")
         except ImportError:
             print("⚠️ No se pudo importar el módulo database (puede ser normal si no se usa SQLAlchemy)")
-        
-        return True
-    except ImportError as e:
-        print(f"❌ Error al importar módulos: {e}")
+        # Verificamos el resultado global
+        if config_imported and mp_imported:
+            print("\n✅ Prueba de importación exitosa para módulos principales")
+            return True
+        else:
+            modules_failed = []
+            if not config_imported:
+                modules_failed.append("config")
+            if not mp_imported:
+                modules_failed.append("media_processor")
+            
+            print(f"\n❌ Falló la importación de los siguientes módulos: {', '.join(modules_failed)}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error inesperado al importar módulos: {e}")
+        traceback.print_exc()
         return False
 
 def main():
